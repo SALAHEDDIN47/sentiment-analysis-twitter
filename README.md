@@ -59,3 +59,7 @@ CREATE TABLE tweets (
     language VARCHAR(10),
     collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+## import the dataset from kaggle
+
+https://www.kaggle.com/datasets/kazanova/sentiment140
