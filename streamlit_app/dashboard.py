@@ -41,41 +41,52 @@ except ImportError as e:
 
 # Configuration de la page
 st.set_page_config(
-    page_title="🐦 Analyse de Sentiment Twitter",
-    page_icon="🐦",
+    page_title="📈 Analyse de Sentiment Twitter",
+    page_icon="📈", # NOUVELLE ICÔNE
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# CSS personnalisé (EXACTEMENT VOTRE STYLE)
+# --- CSS PERSONNALISÉ (MINIMALISTE & MODERNE) ---
 st.markdown("""
 <style>
+    /* 1. Couleurs du Thème - Modernes et Professionnelles */
     :root {
-        /* Couleurs du Thème */
-        --color-primary: #00BFFF; /* Bleu clair vif (DeepSkyBlue) */
-        --color-positive: #00FFC0; /* Cyan clair / Vert électrique */
-        --color-negative: #FF4500; /* Orange Vif (pour un contraste fort) */
-        --color-neutral: #FFD700; /* Jaune Or (Gold) - CORRECTION APPLIQUÉE */
-        --color-ai: #00BFFF;
+        --color-primary: #007AFF; /* Bleu Professionnel (Apple Blue) */
+        --color-positive: #28A745; /* Vert (Succès) */
+        --color-negative: #DC3545; /* Rouge (Danger) */
+        --color-neutral: #FFC107; /* Jaune (Alerte) */
+        --color-ai: #A653F7; /* Violet (IA) */
+        --color-background-card: #FFFFFF; /* Fond de carte blanc pur */
+        --color-border-subtle: #E0E0E0; /* Gris très clair pour les bordures */
     }
     .main-header {
         font-size: 3rem;
         color: var(--color-primary);
-        text-align: center;
-        margin-bottom: 2rem;
-        letter-spacing: 2px; /* Touche futuriste */
+        text-align: left; /* Plus minimaliste */
+        margin-bottom: 0.5rem;
+        font-weight: 300; /* Plus léger */
+        border-bottom: 2px solid var(--color-border-subtle);
+        padding-bottom: 10px;
     }
-    .metric-card {
-        /* LÉGÈREMENT plus sombre que le fond principal (grade of darkness) */
-        background-color: #e5e5e5; 
-        padding: 1rem;
-        border-radius: 8px;
-        text-align: center;
+    /* Style pour les st.subheader (pour les graphiques) */
+    h2 {
+        color: #333333; /* Texte foncé pour un contraste maximal */
         border-left: 5px solid var(--color-primary);
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        padding-left: 10px;
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+    }
+    /* Cartes de métriques (Streamlit metrics) */
+    .st-emotion-cache-1629p8f { 
+        background-color: var(--color-background-card); 
+        padding: 1.2rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); /* Ombre très subtile */
+        border: 1px solid var(--color-border-subtle);
     }
     .ai-card {
-        background-color: #f2f2f2;
+        background-color: #F8F9FA; /* Gris très clair pour l'IA */
         padding: 1.5rem;
         border-radius: 8px;
         border-left: 5px solid var(--color-ai);
@@ -83,15 +94,15 @@ st.markdown("""
         font-size: 1.1rem;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
     }
-    .positive { color: var(--color-positive); font-weight: bold; }
-    .neutral { color: var(--color-neutral); font-weight: bold; }
-    .negative { color: var(--color-negative); font-weight: bold; }
+    .positive { color: var(--color-positive); font-weight: 600; }
+    .neutral { color: var(--color-neutral); font-weight: 600; }
+    .negative { color: var(--color-negative); font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 # -----------------------------
 
 # Titre de l'application
-st.markdown('<h1 class="main-header">🐦 Dashboard d\'Analyse de Sentiment Twitter</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">📈 Dashboard d\'Analyse de Sentiment Twitter</h1>', unsafe_allow_html=True) 
 st.markdown("---")
 
 # Initialisation de la base de données
@@ -117,17 +128,17 @@ if db_manager is None:
     """)
     st.stop()
 
-# --- FONCTION INTELLIGENTE IA (CORRIGÉE : Llama 3.1) ---
+# --- FONCTION INTELLIGENTE IA (DIAGNOSTIC INCLUS) ---
 def generate_ai_insight(query, total, pos, neu, neg):
     """
     Génère un paragraphe d'analyse via l'API Groq (Llama 3.1)
     """
     api_key = os.getenv("GROQ_API_KEY")
     
-    # Calcul des pourcentages
-    pos_pct = (pos/total)*100
-    neg_pct = (neg/total)*100
-    neu_pct = (neu/total)*100
+    # Calcul des pourcentages (évite la division par zéro)
+    pos_pct = (pos/total)*100 if total > 0 else 0
+    neg_pct = (neg/total)*100 if total > 0 else 0
+    neu_pct = (neu/total)*100 if total > 0 else 0
     
     # 1. Essai avec la Vraie IA (Groq)
     if api_key and Groq:
@@ -154,9 +165,11 @@ def generate_ai_insight(query, total, pos, neu, neg):
             return completion.choices[0].message.content
             
         except Exception as e:
+            # Diagnostic imprimé dans la console
+            print(f"❌ ERREUR FATALE GROQ (Basculement en mode Backup): {e}")
             pass
 
-    # 2. Backup (Mode Template - Votre ancienne logique)
+    # 2. Backup (Mode Template)
     dominant = "positive" if pos >= neg and pos >= neu else "négative" if neg > pos else "neutre"
     topic_text = f"concernant '{query}'" if query else "globale"
     
@@ -175,10 +188,10 @@ def generate_ai_insight(query, total, pos, neu, neg):
 # ------------------------------------------
 
 # Sidebar pour les filtres
-st.sidebar.header("🔧 Filtres et Contrôles")
+st.sidebar.header("⚙️ Filtres et Contrôles")
 
 # --- BARRE DE RECHERCHE ---
-st.sidebar.subheader("🔍 Recherche")
+st.sidebar.subheader("🔎 Recherche")
 search_query = st.sidebar.text_input(
     "Mots-clés",
     placeholder="Ex: bitcoin, support, erreur...",
@@ -188,22 +201,22 @@ st.sidebar.markdown("---")
 
 # Sélecteur de période
 date_range = st.sidebar.date_input(
-    "📅 Période d'analyse",
+    "🗓️ Période d'analyse",
     value=(datetime.now() - timedelta(days=7), datetime.now()),
     max_value=datetime.now()
 )
 
 # Filtre de sentiment
 sentiment_filter = st.sidebar.multiselect(
-    "🎭 Filtre de sentiment",
+    "🏷️ Filtre de sentiment",
     ['positive', 'neutral', 'negative'],
     default=['positive', 'neutral', 'negative']
 )
 
 # ----------------------------------------------------------------------
-# --- MODIFICATION DE LA LIMITE DE TWEETS (RETOUR AU CURSEUR) ---
+# --- LIMITE DE TWEETS (Curseur) ---
 
-st.sidebar.subheader("📊 Nombre de tweets à afficher")
+st.sidebar.subheader("🔢 Nombre de tweets à afficher")
 
 # Utilisation du curseur st.slider
 tweet_limit = st.sidebar.slider(
@@ -219,7 +232,7 @@ tweet_limit = st.sidebar.slider(
 # ----------------------------------------------------------------------
 
 # Bouton pour actualiser les données
-if st.sidebar.button("🔄 Actualiser les données"):
+if st.sidebar.button("🔃 Actualiser les données"): 
     st.cache_data.clear()
     st.rerun()
 
@@ -293,7 +306,7 @@ if not tweets_df.empty:
         filtered_df['total_engagement'] = filtered_df['retweet_count'] + filtered_df['favorite_count']
 
         # Métriques principales
-        st.subheader("📈 Métriques Principales")
+        st.subheader("✨ Métriques Principales") # NOUVELLE ICÔNE
         
         col1, col2, col3, col4, col5 = st.columns(5)
         
@@ -305,23 +318,23 @@ if not tweets_df.empty:
         with col1:
             st.metric("Total Tweets", total_tweets)
         with col2:
-            st.metric("😊 Positifs", positive_tweets)
+            st.metric("👍 Positifs", positive_tweets) # NOUVELLE ICÔNE
         with col3:
-            st.metric("😐 Neutres", neutral_tweets)
+            st.metric("⚪ Neutres", neutral_tweets) # NOUVELLE ICÔNE
         with col4:
-            st.metric("😞 Négatifs", negative_tweets)
+            st.metric("👎 Négatifs", negative_tweets) # NOUVELLE ICÔNE
         with col5:
             if total_tweets > 0:
                 positive_ratio = (positive_tweets / total_tweets) * 100
-                st.metric("📊 Score Positif", f"{positive_ratio:.1f}%")
+                st.metric("🎯 Score Positif", f"{positive_ratio:.1f}%") # NOUVELLE ICÔNE
             else:
-                st.metric("📊 Score Positif", "0%")
+                st.metric("🎯 Score Positif", "0%")
         
         st.markdown("---")
 
         # --- SECTION GÉNÉRATION IA (INTÉGRÉE ICI) ---
         if total_tweets > 0:
-            with st.spinner('🤖 L\'IA analyse vos données...'):
+            with st.spinner('💡 L\'IA analyse vos données...'): # NOUVELLE ICÔNE
                 ai_insight = generate_ai_insight(
                     search_query, 
                     total_tweets, 
@@ -329,37 +342,36 @@ if not tweets_df.empty:
                     neutral_tweets, 
                     negative_tweets
                 )
-            st.markdown(f'<div class="ai-card"><strong>🤖 Analyse IA & Insights :</strong><br>{ai_insight}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="ai-card"><strong>💡 Analyse IA & Insights :</strong><br>{ai_insight}</div>', unsafe_allow_html=True) # NOUVELLE ICÔNE
         # --------------------------------------------
         
         # Ligne 1 de Graphiques (Distribution des Sentiments et Histogramme de Confiance)
         col1, col2 = st.columns(2)
         
-        # --- Définir la palette de couleurs pour Plotly ---
+        # --- Définir la palette de couleurs pour Plotly (MODERNE & CORRIGÉE) ---
         SENTIMENT_COLOR_MAP = {
-            'positive': '#00FFC0', # Cyan clair (Vert électrique)
-            'neutral': '#FFD700',  # Jaune Or (CORRIGÉ ICI)
-            'negative': '#FF4500'  # Orange Vif
+            'positive': '#28A745', # Vert
+            'neutral': '#FFC107', # Jaune
+            'negative': '#DC3545' # Rouge
         }
 
         with col1:
             # --- GRAPHIQUE 1 : Distribution des Sentiments (Camembert) ---
-            st.subheader("🎪 Distribution des Sentiments")
+            st.subheader("📈 Distribution des Sentiments") # NOUVELLE ICÔNE
             sentiment_counts = filtered_df['sentiment_label'].value_counts()
             
             fig_pie = px.pie(
                 values=sentiment_counts.values,
                 names=sentiment_counts.index,
                 color=sentiment_counts.index,
-                # Utilisation de la nouvelle palette
                 color_discrete_map=SENTIMENT_COLOR_MAP
             )
             fig_pie.update_traces(textposition='inside', textinfo='percent+label')
             st.plotly_chart(fig_pie, use_container_width=True)
         
         with col2:
-            # --- GRAPHIQUE 2 : Distribution des Scores de Confiance (Histogramme) ---
-            st.subheader("📊 Distribution des Scores de Confiance par Sentiment")
+            # --- GRAPHIQUE 2 : Distribution des Scores de Confiance (Histogramme - Version simplifiée) ---
+            st.subheader("🎯 Distribution des Scores de Confiance par Sentiment") # NOUVELLE ICÔNE
             if 'confidence' in filtered_df.columns:
                 
                 df_plot = filtered_df[['sentiment_label', 'confidence']].dropna() 
@@ -368,15 +380,14 @@ if not tweets_df.empty:
                     df_plot,
                     x="confidence",
                     color="sentiment_label",
-                    marginal="box",
                     histnorm='percent',
-                    title="Fréquence des Niveaux de Confiance (Bins plus larges)",
+                    title="Fréquence des Niveaux de Confiance (plus simple)",
                     labels={'confidence': 'Score de Confiance du Modèle', 'percent': 'Pourcentage'},
                     color_discrete_map=SENTIMENT_COLOR_MAP,
                     nbins=10 
                 )
-                fig_hist.update_layout(barmode='overlay')
-                fig_hist.update_traces(opacity=0.75)
+                fig_hist.update_layout(barmode='group') # Mode Groupé
+                fig_hist.update_traces(opacity=0.9) 
                 st.plotly_chart(fig_hist, use_container_width=True)
             else:
                 st.info("📉 La colonne 'confidence' est manquante ou les données sont vides.")
@@ -387,8 +398,8 @@ if not tweets_df.empty:
         col3, col4 = st.columns(2)
         
         with col3:
-            # --- GRAPHIQUE 3 : Top 10 Utilisateurs Actifs (Inchangé) ---
-            st.subheader("👑 Top 10 Utilisateurs les Plus Actifs")
+            # --- GRAPHIQUE 3 : Top 10 Utilisateurs Actifs ---
+            st.subheader("👤 Top 10 Utilisateurs les Plus Actifs") # NOUVELLE ICÔNE
             
             top_users = filtered_df['user_name'].value_counts().nlargest(10).reset_index()
             top_users.columns = ['user_name', 'tweet_count']
@@ -399,16 +410,15 @@ if not tweets_df.empty:
                 y='user_name',
                 orientation='h',
                 title="Volume de Tweets par Utilisateur",
-                labels={'user_name': 'Utilisateur', 'tweet_count': 'Nombre de Tweets'},
-                color_continuous_scale=px.colors.sequential.Cividis,
+                color_continuous_scale=px.colors.sequential.Plotly3,
                 template='plotly_white'
             )
             fig_users.update_layout(yaxis={'categoryorder':'total ascending'}) 
             st.plotly_chart(fig_users, use_container_width=True)
 
         with col4:
-            # --- GRAPHIQUE 4 : Évolution Temporelle Segmentée (DIAGRAMME À BARRES) ---
-            st.subheader("📅 Évolution Temporelle par Sentiment (Barres)")
+            # --- GRAPHIQUE 4 : Évolution Temporelle Segmentée (Barres + Ligne Total) ---
+            st.subheader("🗓️ Évolution Temporelle par Sentiment (Barres + Ligne)") # NOUVELLE ICÔNE
             
             daily_sentiment = filtered_df.groupby([
                 filtered_df['created_at'].dt.date, 
@@ -419,24 +429,59 @@ if not tweets_df.empty:
                 
                 daily_sentiment['created_at'] = daily_sentiment['created_at'].astype(str)
                 
-                fig_evo = px.bar(
-                    daily_sentiment,
-                    x='created_at',
-                    y='count',
-                    color='sentiment_label',
-                    title="Volume Quotidien de Tweets par Sentiment",
-                    labels={'count': 'Nombre de Tweets', 'created_at': 'Date'},
-                    color_discrete_map=SENTIMENT_COLOR_MAP,
-                    barmode='group' 
+                # Calcul du total quotidien pour la ligne de tendance
+                daily_total = daily_sentiment.groupby('created_at')['count'].sum().reset_index(name='total_count')
+                
+                # 1. Créer le tracé des Barres (via Plotly Go)
+                fig_evo = go.Figure()
+
+                for sentiment, color in SENTIMENT_COLOR_MAP.items():
+                    df_sent = daily_sentiment[daily_sentiment['sentiment_label'] == sentiment]
+                    fig_evo.add_trace(go.Bar(
+                        x=df_sent['created_at'],
+                        y=df_sent['count'],
+                        name=sentiment.capitalize(),
+                        marker_color=color,
+                        opacity=0.8
+                    ))
+
+                # 2. Ajouter la Ligne de Tendance (Volume Total)
+                LINE_COLOR = '#007AFF' 
+                fig_evo.add_trace(go.Scatter(
+                    x=daily_total['created_at'],
+                    y=daily_total['total_count'],
+                    mode='lines+markers',
+                    name='Total Quotidien',
+                    marker=dict(color=LINE_COLOR, size=8), 
+                    line=dict(color=LINE_COLOR, width=3),
+                    yaxis='y2' 
+                ))
+
+                # 3. Mettre à jour le Layout (titres et axes)
+                fig_evo.update_layout(
+                    title="Volume Quotidien de Tweets (Sentiment + Total)",
+                    xaxis=dict(type='category', title='Date'),
+                    # Axe Y principal pour les barres (Count)
+                    yaxis=dict(title='Nombre de Tweets (Sentiment)', showgrid=False),
+                    # Axe Y secondaire pour la ligne (Total)
+                    yaxis2=dict(
+                        title='Total Quotidien',
+                        overlaying='y',
+                        side='right',
+                        showgrid=False
+                    ),
+                    legend_title='Légende',
+                    barmode='group',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                 )
-                fig_evo.update_layout(xaxis=dict(type='category'))
+
                 st.plotly_chart(fig_evo, use_container_width=True)
             else:
                 st.info("📉 L'évolution n'est pas affichée: les données sont trop rares ou couvrent une seule journée.")
 
         # ----------------------------------------------------
         
-        st.subheader("📋 Tweets Récents Analysés")
+        st.subheader("📝 Tweets Récents Analysés") # NOUVELLE ICÔNE
         
         display_columns = st.multiselect(
             "Colonnes à afficher :",
@@ -446,11 +491,11 @@ if not tweets_df.empty:
         
         if display_columns:
             def color_sentiment(row):
-                # Utilisation des couleurs définies dans le CSS pour l'affichage de la table
+                # Couleurs très claires pour ne pas surcharger la table
                 colors = {
-                    'positive': 'background-color: #E0FFEF; color: black;', # Très clair pour la table
-                    'negative': 'background-color: #FFECE5; color: black;',
-                    'neutral': 'background-color: #FFFACD; color: black;'
+                    'positive': 'background-color: #E6F7ED; color: black;', 
+                    'negative': 'background-color: #FEE7E9; color: black;',
+                    'neutral': 'background-color: #FFF9E6; color: black;'
                 }
                 return [colors.get(row['sentiment_label'], '')] * len(row)
             
@@ -481,7 +526,7 @@ st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: gray;'>
-        🐦 Dashboard d'Analyse de Sentiment Twitter - Développé avec Streamlit
+        📈 Dashboard d'Analyse de Sentiment Twitter - Développé avec Streamlit
     </div>
     """,
     unsafe_allow_html=True
