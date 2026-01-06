@@ -1,85 +1,134 @@
+import os
 import pandas as pd
-import sys
-import time
+from tqdm import tqdm
+
 from src.preprocessing.text_cleaner import TextCleaner
 from src.nlp.sentiment_analyzer import SentimentAnalyzer
 from src.database.db_manager import DatabaseManager
 
+
+# =============================
+# CONFIG
+# =============================
+DATASET_PATH = "data/raw/data.csv"
+MAX_ROWS = 20000        # ⚠️ pour tests (mettre None pour tout le dataset)
+SAVE_TO_DB = True       # mettre False si tu veux juste tester
+SHOW_PROGRESS = True
+
+
+# =============================
+# LOAD DATASET
+# =============================
+def load_sentiment140(path, max_rows=None):
+    """
+    Sentiment140 format:
+    target, id, date, flag, user, text
+    target: 0 = negative, 4 = positive
+    """
+    cols = ["target", "ids", "date", "flag", "user", "text"]
+
+    df = pd.read_csv(
+        path,
+        encoding="latin-1",
+        names=cols,
+        nrows=max_rows
+    )
+
+    # garder seulement 0 et 4
+    df = df[df["target"].isin([0, 4])].copy()
+
+    # mapping labels
+    df["true_label"] = df["target"].map({
+        0: "negative",
+        4: "positive"
+    })
+
+    return df[["date", "user", "text", "true_label"]]
+
+
+# =============================
+# MAIN PIPELINE
+# =============================
 def main():
-    print("🚀 STARTING FULL DATA IMPORT...")
-    
-    # 1. Load the CSV
-    try:
-        # We read the whole file. 
-        # Note: If you have the full Sentiment140 (1.6 Million rows), this takes 5-10 seconds to load.
-        cols = ['target', 'ids', 'date', 'flag', 'user', 'text']
-        
-        # Try reading with headers first, if it fails, use manual headers
-        try:
-            df = pd.read_csv("data.csv", encoding='latin-1')
-            if 'text' not in df.columns:
-                 df = pd.read_csv("data.csv", encoding='latin-1', names=cols)
-        except:
-             df = pd.read_csv("data.csv", encoding='latin-1', names=cols)
-            
-        total_rows = len(df)
-        print(f"✅ Loaded CSV with {total_rows} rows.")
-        
-    except FileNotFoundError:
-        print("❌ CRITICAL ERROR: 'data.csv' file not found.")
-        sys.exit(1)
+    if not os.path.exists(DATASET_PATH):
+        raise FileNotFoundError(f"Dataset introuvable : {DATASET_PATH}")
 
-    # 2. Setup Tools
-    db_manager = DatabaseManager()
-    text_cleaner = TextCleaner()
-    sentiment_analyzer = SentimentAnalyzer()
+    print("📥 Chargement du dataset Sentiment140...")
+    df = load_sentiment140(DATASET_PATH, MAX_ROWS)
+    print(f"Tweets chargés : {len(df)}")
 
-    print("🔄 Processing ALL tweets... (This may take a while)")
-    
-    # 3. Process EVERYTHING (No .head() limit)
-    success_count = 0
-    start_time = time.time()
+    cleaner = TextCleaner()
+    analyzer = SentimentAnalyzer()
+    db = DatabaseManager()
 
-    for index, row in df.iterrows():
-        try:
-            # Handle column names safely
-            text = str(row.get('text', row.get('content', '')))
-            user = str(row.get('user', row.get('author', 'unknown')))
-            
-            if not text or text == "nan":
-                continue
+    results = []
 
-            # Process
-            clean = text_cleaner.clean_text(text)
-            sent = sentiment_analyzer.analyze_sentiment(clean)
+    iterator = tqdm(df.iterrows(), total=len(df)) if SHOW_PROGRESS else df.iterrows()
 
-            tweet_data = {
-                'tweet_id': index, 
-                'text': text,
-                'clean_text': clean,
-                'created_at': pd.Timestamp.now(),
-                'user_name': user,
-                'user_followers_count': 0, 'retweet_count': 0, 'favorite_count': 0,
-                'sentiment_label': sent['label'],
-                'sentiment_score': sent['sentiment_score'],
-                'confidence': sent['confidence'],
-                'language': 'en'
-            }
+    print("🧠 Analyse des sentiments en cours...")
+    for _, row in iterator:
+        raw_text = str(row["text"])
+        clean_text = cleaner.clean_text(raw_text)
 
-            if db_manager.save_tweet(tweet_data):
-                success_count += 1
-            
-            # Progress Update every 100 tweets
-            if success_count % 100 == 0:
-                elapsed = time.time() - start_time
-                speed = success_count / elapsed if elapsed > 0 else 0
-                print(f"⏳ Progress: {success_count}/{total_rows} ({speed:.1f} tweets/sec) - Last: {sent['label']}")
+        if not clean_text.strip():
+            continue
 
-        except Exception as e:
-            # Don't crash on one bad row, just print error and continue
-            print(f"⚠️ Skipped row {index}: {e}")
+        analysis = analyzer.analyze_sentiment(clean_text)
 
-    print(f"\n🎉 DONE. Successfully inserted {success_count} tweets into the database.")
+        results.append({
+            "created_at": row["date"],
+            "user_name": row["user"],
+            "text": raw_text,
+            "clean_text": clean_text,
+            "true_label": row["true_label"],
+            "sentiment_label": analysis["label"],
+            "confidence": analysis["confidence"],
+            "sentiment_score": analysis["sentiment_score"]
+        })
 
+    results_df = pd.DataFrame(results)
+    print("✅ Analyse terminée")
+
+    # =============================
+    # EVALUATION GLOBALE
+    # =============================
+    print("\n📊 Évaluation globale :")
+
+    comparable = results_df[results_df["sentiment_label"] != "neutral"]
+
+    if not comparable.empty:
+        accuracy = (
+            comparable["sentiment_label"] == comparable["true_label"]
+        ).mean()
+
+        print(f"Accuracy (sans neutral) : {accuracy:.4f}")
+    else:
+        print("⚠️ Aucun tweet comparable (trop de neutral)")
+
+    print("\nDistribution des prédictions :")
+    print(results_df["sentiment_label"].value_counts(normalize=True))
+
+    # =============================
+    # SAVE TO DATABASE
+    # =============================
+    if SAVE_TO_DB:
+        print("\n💾 Sauvegarde dans la base de données...")
+        for _, r in results_df.iterrows():
+            db.insert_tweet(
+                text=r["text"],
+                clean_text=r["clean_text"],
+                sentiment_label=r["sentiment_label"],
+                confidence=r["confidence"],
+                sentiment_score=r["sentiment_score"],
+                user_name=r["user_name"],
+                created_at=r["created_at"],
+                true_label=r["true_label"]
+            )
+        print("✅ Données enregistrées dans la DB")
+
+    print("\n🎉 Pipeline terminé avec succès")
+
+
+# =============================
 if __name__ == "__main__":
     main()

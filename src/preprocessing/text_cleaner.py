@@ -1,97 +1,137 @@
 import re
 import emoji
 import nltk
-import spacy
+import logging
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
-import logging
 
-# Configurer le logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class TextCleaner:
-    def __init__(self):
-        # Télécharger les ressources si manquantes
+    """
+    Nettoyage Twitter-aware + négations + emojis + hashtags.
+
+    - URLs -> <URL>
+    - Mentions -> <USER>
+    - Hashtags -> garde le mot (ex: #Bitcoin -> bitcoin)
+    - Répétitions: "soooo" -> "soo"
+    - Emojis -> texte (emoji.demojize)
+    - Stopwords: on garde les négations (not, no, never)
+    - Negation trick: "not good" -> "not_good"
+    """
+
+    def __init__(self, keep_special_tokens=True):
+        self.keep_special_tokens = keep_special_tokens
         self._download_nltk_resources()
-        
-        self.stop_words = set(stopwords.words('english'))
+
+        sw = set(stopwords.words("english"))
+        # garder les négations (très important en sentiment)
+        self.negation_words = {"not", "no", "never", "n't"}
+        self.stop_words = sw - self.negation_words
+
         self.lemmatizer = WordNetLemmatizer()
-        
-        # Charger spaCy avec gestion d'erreur
-        try:
-            self.nlp = spacy.load('en_core_web_sm', disable=['parser', 'ner'])
-        except OSError:
-            logger.warning("Modèle spaCy 'en_core_web_sm' non trouvé. Installation...")
-            import os
-            os.system("python -m spacy download en_core_web_sm")
-            self.nlp = spacy.load('en_core_web_sm', disable=['parser', 'ner'])
-    
+
     def _download_nltk_resources(self):
-        """Télécharge les ressources NLTK si manquantes"""
         resources = {
-            'punkt_tab': 'tokenizers/punkt_tab',
-            'punkt': 'tokenizers/punkt',
-            'stopwords': 'corpora/stopwords',
-            'wordnet': 'corpora/wordnet',
-            'averaged_perceptron_tagger': 'taggers/averaged_perceptron_tagger',
-            'omw-1.4': 'corpora/omw-1.4'
+            "punkt": "tokenizers/punkt",
+            "stopwords": "corpora/stopwords",
+            "wordnet": "corpora/wordnet",
+            "omw-1.4": "corpora/omw-1.4",
         }
-        
-        for resource_name, resource_path in resources.items():
+        for name, path in resources.items():
             try:
-                nltk.data.find(resource_path)
-                logger.info(f"✅ {resource_name} déjà disponible")
+                nltk.data.find(path)
             except LookupError:
-                logger.info(f"📥 Téléchargement de {resource_name}...")
-                nltk.download(resource_name)
-        
-    def clean_text(self, text):
-        """Nettoie et prétraite le texte avec gestion d'erreur"""
+                nltk.download(name)
+
+    def _normalize_repetitions(self, text: str) -> str:
+        # "sooooo" -> "soo"
+        return re.sub(r"(.)\1{2,}", r"\1\1", text)
+
+    def _handle_negations(self, tokens):
+        """
+        Convertit: not good -> not_good (sur 1 mot suivant)
+        """
+        out = []
+        i = 0
+        while i < len(tokens):
+            t = tokens[i]
+            if t in {"not", "no", "never"} and i + 1 < len(tokens):
+                out.append(f"{t}_{tokens[i+1]}")
+                i += 2
+            else:
+                out.append(t)
+                i += 1
+        return out
+
+    def clean_text(self, text: str) -> str:
         if not isinstance(text, str) or not text.strip():
             return ""
-        
+
         try:
-            # Convertir en minuscule
             text = text.lower()
-            
-            # Supprimer les URLs
-            text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
-            
-            # Supprimer les mentions et hashtags
-            text = re.sub(r'@\w+|#\w+', '', text)
-            
-            # Convertir les émojis en texte
-            text = emoji.demojize(text)
-            
-            # Supprimer la ponctuation et les caractères spéciaux
-            text = re.sub(r'[^\w\s]', ' ', text)
-            
-            # Supprimer les chiffres
-            text = re.sub(r'\d+', '', text)
-            
-            # Supprimer les espaces multiples
-            text = re.sub(r'\s+', ' ', text).strip()
-            
-            # Tokenization et suppression des stopwords
+
+            # URLs -> <URL>
+            text = re.sub(r"http\S+|www\.\S+", " <URL> ", text)
+
+            # Mentions -> <USER>
+            text = re.sub(r"@\w+", " <USER> ", text)
+
+            # Hashtags: garder le mot (#bitcoin -> bitcoin)
+            text = re.sub(r"#(\w+)", r"\1", text)
+
+            # enlever RT
+            text = re.sub(r"\brt\b", " ", text)
+
+            # normaliser répétitions
+            text = self._normalize_repetitions(text)
+
+            # emojis -> texte ":smiling_face:"
+            text = emoji.demojize(text, language="en")
+
+            # remplacer ":" "_" dans demojize -> tokens lisibles
+            text = text.replace(":", " ").replace("_", " ")
+
+            # enlever ponctuation sauf tokens spéciaux
+            # on garde <URL> <USER> si keep_special_tokens
+            if self.keep_special_tokens:
+                # protéger tokens
+                text = text.replace("<url>", " __URL__ ").replace("<user>", " __USER__ ")
+                text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
+                text = text.replace("__URL__", "<URL>").replace("__USER__", "<USER>")
+            else:
+                text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
+
+            # enlever chiffres isolés
+            text = re.sub(r"\b\d+\b", " ", text)
+
+            # espaces multiples
+            text = re.sub(r"\s+", " ", text).strip()
+
             tokens = word_tokenize(text)
-            tokens = [token for token in tokens if token not in self.stop_words and len(token) > 2]
-            
-            # Lemmatisation
-            tokens = [self.lemmatizer.lemmatize(token) for token in tokens]
-            
-            return ' '.join(tokens)
-            
+
+            # supprimer stopwords (mais garder négations)
+            tokens = [
+                t for t in tokens
+                if (t not in self.stop_words)
+                and (len(t) > 1)
+            ]
+
+            # gérer négations
+            tokens = self._handle_negations(tokens)
+
+            # lemmatisation légère
+            tokens = [
+                self.lemmatizer.lemmatize(t)
+                for t in tokens
+                if t not in {"<URL>", "<USER>"} or self.keep_special_tokens
+            ]
+
+            return " ".join(tokens)
+
         except Exception as e:
-            logger.error(f"Erreur lors du nettoyage du texte: {e}")
-            return text  # Retourner le texte original en cas d'erreur
-    
-    def detect_language(self, text):
-        """Détection simple de la langue"""
-        if not text:
-            return False
-            
-        english_words = set(['the', 'and', 'is', 'in', 'to', 'of', 'a', 'for'])
-        words = set(text.lower().split())
-        return len(words.intersection(english_words)) > 2
+            logger.error(f"Erreur clean_text: {e}")
+            return text
