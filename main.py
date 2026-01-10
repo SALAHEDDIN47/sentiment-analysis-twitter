@@ -11,7 +11,7 @@ from src.database.db_manager import DatabaseManager
 # CONFIG
 # =============================
 DATASET_PATH = "data/raw/data.csv"
-MAX_ROWS = 20000        # ⚠️ pour tests (mettre None pour tout le dataset)
+MAX_ROWS = 200000        # ⚠️ pour tests (mettre None pour tout le dataset)
 SAVE_TO_DB = True       # mettre False si tu veux juste tester
 SHOW_PROGRESS = True
 

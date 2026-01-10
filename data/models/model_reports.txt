@@ -1,0 +1,68 @@
+
+============================================================
+MODEL: LogisticRegression
+============================================================
+Accuracy: 0.7734
+F1_macro: 0.7733
+Precision_macro: 0.7739
+Recall_macro: 0.7734
+Train_time_sec: 1.61
+Predict_time_sec: 0.01
+Confusion matrix:
+[[15005  4966]
+ [ 4097 15932]]
+Classification report:
+              precision    recall  f1-score   support
+
+    negative       0.79      0.75      0.77     19971
+    positive       0.76      0.80      0.78     20029
+
+    accuracy                           0.77     40000
+   macro avg       0.77      0.77      0.77     40000
+weighted avg       0.77      0.77      0.77     40000
+
+
+============================================================
+MODEL: LinearSVC
+============================================================
+Accuracy: 0.7701
+F1_macro: 0.7699
+Precision_macro: 0.7708
+Recall_macro: 0.7700
+Train_time_sec: 2.12
+Predict_time_sec: 0.00
+Confusion matrix:
+[[14843  5128]
+ [ 4069 15960]]
+Classification report:
+              precision    recall  f1-score   support
+
+    negative       0.78      0.74      0.76     19971
+    positive       0.76      0.80      0.78     20029
+
+    accuracy                           0.77     40000
+   macro avg       0.77      0.77      0.77     40000
+weighted avg       0.77      0.77      0.77     40000
+
+
+============================================================
+MODEL: MultinomialNB
+============================================================
+Accuracy: 0.7621
+F1_macro: 0.7621
+Precision_macro: 0.7622
+Recall_macro: 0.7621
+Train_time_sec: 0.65
+Predict_time_sec: 0.01
+Confusion matrix:
+[[15131  4840]
+ [ 4674 15355]]
+Classification report:
+              precision    recall  f1-score   support
+
+    negative       0.76      0.76      0.76     19971
+    positive       0.76      0.77      0.76     20029
+
+    accuracy                           0.76     40000
+   macro avg       0.76      0.76      0.76     40000
+weighted avg       0.76      0.76      0.76     40000

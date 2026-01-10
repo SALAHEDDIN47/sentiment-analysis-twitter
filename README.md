@@ -6,7 +6,7 @@ A comprehensive real-time Twitter sentiment analysis system using machine learni
 
 - **Real-time Twitter data collection** using Tweepy
 - **Advanced NLP preprocessing** with spaCy and NLTK
-- **Sentiment analysis** using TwhIN-BERT model
+- **Sentiment analysis** using logistic regression and TF-IDF model
 - **PostgreSQL database** for data storage
 - **Interactive dashboard** with Streamlit
 - **Multi-language support** (English focused)

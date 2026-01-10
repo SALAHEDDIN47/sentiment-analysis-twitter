@@ -1,535 +1,627 @@
-import streamlit as st
+# streamlit_app/dashboard.py
+# Dashboard refactorisé (tabs) + Neutral basé sur confidence (recommandé)
+# ✅ Fonctionne même si les dates created_at sont anciennes (ex: 2009) ou partiellement non parsables
+# ✅ Ajoute: Model Health + Comparaison modèles + Trends + Explore + Diagnostics
+
+import os
+import sys
+from datetime import datetime, timedelta
+
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import numpy as np
-import sys
-import os
+import streamlit as st
 from dotenv import load_dotenv
 
-# --- NOUVEAU : Import pour l'IA ---
+# --- Optional IA (Groq) ---
 try:
     from groq import Groq
-except ImportError:
+except Exception:
     Groq = None
-# ----------------------------------
 
-# Configuration du chemin et chargement .env
+
+# ----------------------------
+# Paths / Imports projet
+# ----------------------------
+current_dir = os.path.dirname(os.path.abspath(__file__))  # streamlit_app/
+project_root = os.path.dirname(current_dir)               # racine projet
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+load_dotenv(override=True)
+
 try:
-    # Obtenir le chemin racine du projet
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(current_dir)
-
-    # Ajouter au path Python
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-
-    # Importer le module database
     from src.database.db_manager import DatabaseManager
-    load_dotenv(override=True)  # Chargement forcé des variables d'environnement
-
-except ImportError as e:
-    st.error(f"❌ Erreur d'importation: {e}")
-    st.info("""
-    **Solution:**
-    1. Assurez-vous que tous les fichiers du projet sont présents
-    2. Vérifiez la structure des dossiers
-    3. Exécutez Streamlit depuis la racine du projet
-    """)
+except Exception as e:
+    st.error(f"❌ Import DatabaseManager impossible: {e}")
+    st.info("Vérifie la structure du projet et lance Streamlit depuis la racine (ou utilise ce fichier).")
     st.stop()
 
-# Configuration de la page
+
+# ----------------------------
+# Page config + CSS
+# ----------------------------
 st.set_page_config(
-    page_title="📈 Analyse de Sentiment Twitter",
+    page_title="📈 Twitter Sentiment Dashboard",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# --- CSS PERSONNALISÉ (MINIMALISTE & MODERNE) ---
-st.markdown("""
+st.markdown(
+    """
 <style>
-    :root {
-        --color-primary: #007AFF;
-        --color-positive: #28A745;
-        --color-negative: #DC3545;
-        --color-neutral: #FFC107;
-        --color-ai: #A653F7;
-        --color-background-card: #FFFFFF;
-        --color-border-subtle: #E0E0E0;
-    }
-    .main-header {
-        font-size: 3rem;
-        color: var(--color-primary);
-        text-align: left;
-        margin-bottom: 0.5rem;
-        font-weight: 300;
-        border-bottom: 2px solid var(--color-border-subtle);
-        padding-bottom: 10px;
-    }
-    h2 {
-        color: #333333;
-        border-left: 5px solid var(--color-primary);
-        padding-left: 10px;
-        margin-top: 1.5rem;
-        margin-bottom: 1rem;
-    }
-    .st-emotion-cache-1629p8f {
-        background-color: var(--color-background-card);
-        padding: 1.2rem;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        border: 1px solid var(--color-border-subtle);
-    }
-    .ai-card {
-        background-color: #F8F9FA;
-        padding: 1.5rem;
-        border-radius: 8px;
-        border-left: 5px solid var(--color-ai);
-        margin-bottom: 2rem;
-        font-size: 1.1rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-    }
-    .positive { color: var(--color-positive); font-weight: 600; }
-    .neutral { color: var(--color-neutral); font-weight: 600; }
-    .negative { color: var(--color-negative); font-weight: 600; }
+:root{
+  --primary:#007AFF;
+  --pos:#28A745;
+  --neg:#DC3545;
+  --neu:#FFC107;
+  --ai:#A653F7;
+  --border:#E6E6E6;
+  --card:#FFFFFF;
+}
+.main-title{
+  font-size: 2.4rem;
+  font-weight: 300;
+  color: var(--primary);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: .6rem;
+  margin-bottom: .2rem;
+}
+.section-title{
+  border-left: 5px solid var(--primary);
+  padding-left: 10px;
+  margin-top: 1.2rem;
+}
+.ai-card{
+  background:#F8F9FA;
+  border-left:5px solid var(--ai);
+  padding:1rem 1.2rem;
+  border-radius:10px;
+  box-shadow:0 3px 8px rgba(0,0,0,.05);
+}
+.small-muted{
+  color:#6c757d;
+  font-size:.9rem;
+}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# Titre
-st.markdown('<h1 class="main-header">📈 Dashboard d\'Analyse de Sentiment Twitter</h1>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">📈 Dashboard d\'Analyse de Sentiment (Twitter / Sentiment140)</div>', unsafe_allow_html=True)
+st.markdown('<div class="small-muted">Neutral = incertitude (confidence &lt; seuil) • Comparaison modèles • Trends • Exploration</div>', unsafe_allow_html=True)
 st.markdown("---")
 
-# Initialisation de la base de données
+
+# ----------------------------
+# DB init
+# ----------------------------
 @st.cache_resource
 def init_db():
-    try:
-        return DatabaseManager()
-    except Exception as e:
-        st.error(f"❌ Erreur de connexion à la base de données: {e}")
-        return None
+    return DatabaseManager()
 
-db_manager = init_db()
-
-if db_manager is None:
-    st.error("""
-    **Impossible de se connecter à la base de données.**
-    Vérifiez que:
-    - PostgreSQL est démarré
-    - La base de données existe
-    - Les identifiants dans le fichier .env sont corrects
-    """)
+try:
+    db = init_db()
+except Exception as e:
+    st.error(f"❌ Impossible de se connecter à la DB: {e}")
+    st.info(
+        "Vérifie PostgreSQL + .env + DB_CONFIG, et que la table 'tweets' existe.\n"
+        "Puis relance Streamlit."
+    )
     st.stop()
 
-# --- FONCTION IA ---
-def generate_ai_insight(query, total, pos, neu, neg):
-    api_key = os.getenv("GROQ_API_KEY")
-    pos_pct = (pos/total)*100 if total > 0 else 0
-    neg_pct = (neg/total)*100 if total > 0 else 0
-    neu_pct = (neu/total)*100 if total > 0 else 0
 
+# ----------------------------
+# Helpers
+# ----------------------------
+SENTIMENT_COLOR_MAP = {
+    "positive": "#28A745",
+    "neutral":  "#FFC107",
+    "negative": "#DC3545",
+}
+
+def safe_parse_datetime(series: pd.Series) -> pd.Series:
+    """Parse robuste (même si timezone texte). UTC pour homogénéité."""
+    return pd.to_datetime(series.astype(str), errors="coerce", utc=True)
+
+def generate_ai_insight(query, total, pos, neu, neg):
+    """IA optionnelle (Groq) + fallback texte."""
+    api_key = os.getenv("GROQ_API_KEY")
+
+    pos_pct = (pos / total) * 100 if total else 0
+    neu_pct = (neu / total) * 100 if total else 0
+    neg_pct = (neg / total) * 100 if total else 0
+
+    # IA (si dispo)
     if api_key and Groq:
         try:
             client = Groq(api_key=api_key)
             prompt = f"""
             Agis comme un expert en analyse de données sociales.
-            Analyse ces statistiques de tweets concernant le sujet "{query if query else 'Global'}":
-            - Total tweets: {total}
-            - Positifs: {pos_pct:.1f}%
-            - Neutres: {neu_pct:.1f}%
-            - Négatifs: {neg_pct:.1f}%
+            Sujet: "{query if query else 'Global'}"
+            Total: {total}
+            Positif: {pos_pct:.1f}%
+            Neutre (incertain): {neu_pct:.1f}%
+            Négatif: {neg_pct:.1f}%
 
-            Rédige un paragraphe court (3-4 lignes max) et professionnel en français.
-            Analyse la tendance dominante. Si le négatif est > 30%, donne une alerte.
-            Ne commence pas par "Voici l'analyse", va droit au but.
+            Donne 3-4 lignes max en français, style pro. Si négatif > 30%: alerte.
+            Ne commence pas par "Voici l'analyse".
             """
             completion = client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama-3.1-8b-instant",
             )
             return completion.choices[0].message.content
-        except Exception as e:
-            print(f"❌ ERREUR GROQ (fallback): {e}")
+        except Exception:
+            pass
 
-    dominant = "positive" if pos >= neg and pos >= neu else "négative" if neg > pos else "neutre"
-    topic_text = f"concernant '{query}'" if query else "globale"
-    text = f"D'après l'analyse sémantique de **{total} tweets** {topic_text}, la tendance générale est majoritairement **{dominant}**. "
-    text += f"Nous observons que **{pos_pct:.1f}%** exprime une satisfaction claire, tandis que **{neg_pct:.1f}%** manifestent un mécontentement. "
-    text += f"Le reste (**{neu_pct:.1f}%**) demeure neutre."
+    # Fallback
+    dominant = "positive" if pos >= neg and pos >= neu else ("negative" if neg > pos else "neutral")
+    topic = f"sur « {query} »" if query else "sur l’ensemble des données"
+    text = (
+        f"Sur **{total} tweets** {topic}, la tendance dominante est **{dominant}**. "
+        f"Positif: **{pos_pct:.1f}%**, Neutre (incertain): **{neu_pct:.1f}%**, Négatif: **{neg_pct:.1f}%**. "
+    )
     if neg_pct > 30:
-        text += " ⚠️ **Alerte :** taux négatif élevé."
+        text += "⚠️ Le niveau de négativité est élevé : il faut analyser les causes (mots-clés, périodes, utilisateurs)."
     elif pos_pct > 60:
-        text += " ✅ **Succès :** engagement positif très fort."
+        text += "✅ Sentiment global très favorable : bonne réception de la communauté."
     else:
-        text += " ℹ️ **Observation :** avis partagés."
+        text += "ℹ️ Opinions partagées : interprétation nuancée selon la période et les sujets."
     return text
 
-# Sidebar
-st.sidebar.header("⚙️ Filtres et Contrôles")
 
-st.sidebar.subheader("🔎 Recherche")
-search_query = st.sidebar.text_input(
-    "Mots-clés",
-    placeholder="Ex: bitcoin, support, erreur...",
-    help="Filtrer les tweets contenant ce mot"
-)
-st.sidebar.markdown("---")
-
-# Charger un petit sample pour déterminer la période disponible dans la DB
+# ----------------------------
+# Data loader
+# ----------------------------
 @st.cache_data(ttl=300)
-def load_data(limit=1000):
+def load_data(limit: int) -> pd.DataFrame:
     try:
-        return db_manager.get_tweets(limit=limit)
-    except Exception as e:
-        st.error(f"❌ Erreur lors du chargement des données: {e}")
+        return db.get_tweets(limit=limit)
+    except Exception:
         return pd.DataFrame()
 
-tmp_df = load_data(limit=2000)
 
-disable_date_filter = False
-if not tmp_df.empty and 'created_at' in tmp_df.columns:
-    tmp_dates = pd.to_datetime(tmp_df['created_at'].astype(str), errors='coerce', utc=True)
-    if tmp_dates.isna().mean() > 0.7:
-        st.sidebar.warning("⚠️ Dates created_at non parsables → filtre date désactivé.")
-        disable_date_filter = True
-        date_range = (datetime.now().date() - timedelta(days=365), datetime.now().date())
-    else:
-        min_d = tmp_dates.min().date()
-        max_d = tmp_dates.max().date()
-        date_range = st.sidebar.date_input(
-            "🗓️ Période d'analyse",
-            value=(min_d, max_d),
-            min_value=min_d,
-            max_value=max_d
-        )
-else:
-    disable_date_filter = True
-    date_range = (datetime.now().date() - timedelta(days=365), datetime.now().date())
+# ----------------------------
+# Sidebar (contrôles)
+# ----------------------------
+st.sidebar.header("⚙️ Contrôles")
 
-sentiment_filter = st.sidebar.multiselect(
-    "🏷️ Filtre de sentiment",
-    ['positive', 'neutral', 'negative'],
-    default=['positive', 'neutral', 'negative']
+search_query = st.sidebar.text_input(
+    "🔎 Recherche mots-clés",
+    placeholder="Ex: bitcoin, bug, support...",
 )
 
-st.sidebar.subheader("🔢 Nombre de tweets à afficher")
 tweet_limit = st.sidebar.slider(
-    "Limite de Tweets",
-    min_value=100,
+    "🔢 Tweets (max chargés depuis DB)",
+    min_value=200,
     max_value=50000,
     value=5000,
-    step=100,
-    help="Limite le nombre de tweets récupérés depuis la base de données."
+    step=200,
 )
 
-# Filtre confidence
-st.sidebar.subheader("🎯 Confiance du modèle")
+neutral_threshold = st.sidebar.slider(
+    "⚪ Seuil Neutral (confidence < seuil)",
+    0.0, 1.0, 0.55, 0.01,
+    help="Si confidence est faible, on considère la prédiction comme incertaine (neutral).",
+)
+
+# Options sentiment affichées (inclut neutral basé sur confiance)
+sentiment_filter = st.sidebar.multiselect(
+    "🏷️ Filtre de sentiment (affiché)",
+    ["positive", "neutral", "negative"],
+    default=["positive", "neutral", "negative"],
+)
+
 min_confidence = st.sidebar.slider(
-    "Confidence minimale",
-    min_value=0.0,
-    max_value=1.0,
-    value=0.0,
-    step=0.01,
-    help="Filtre les tweets selon la confiance du modèle."
+    "🎯 Confidence minimale (optionnel)",
+    0.0, 1.0, 0.0, 0.01,
+    help="Filtre dur: retire les tweets sous ce seuil. (Neutral basé sur threshold reste indépendant)",
 )
 
-if st.sidebar.button("🔃 Actualiser les données"):
+if st.sidebar.button("🔃 Actualiser"):
     st.cache_data.clear()
     st.rerun()
 
+
+# ----------------------------
+# Load + preprocessing
+# ----------------------------
 tweets_df = load_data(limit=tweet_limit)
 
 st.sidebar.markdown("---")
-if not tweets_df.empty:
-    st.sidebar.info(f"✅ **DB Chargée :** {len(tweets_df)} tweets.")
-else:
-    st.sidebar.warning("❌ **DB Chargée :** 0 tweet.")
-
 if tweets_df.empty:
-    st.warning("📭 Aucune donnée disponible dans la base de données.")
-    st.info("""
-    **Pour commencer :**
-    1. Exécutez `python main.py` pour insérer des données
-    2. Vérifiez la connexion à PostgreSQL
-    """)
+    st.sidebar.warning("❌ DB chargée: 0 tweet")
+    st.warning("📭 Aucun tweet chargé depuis la base.")
+    st.info("Exécute d’abord `python main.py` pour insérer des tweets dans la base.")
+    st.stop()
+else:
+    st.sidebar.success(f"✅ DB chargée: {len(tweets_df)} tweets")
+
+# Colonnes attendues (tolérant)
+for col in ["text", "clean_text", "sentiment_label", "confidence", "created_at", "user_name", "retweet_count", "favorite_count"]:
+    if col not in tweets_df.columns:
+        tweets_df[col] = np.nan
+
+# Types
+tweets_df["created_at"] = safe_parse_datetime(tweets_df["created_at"])
+tweets_df["retweet_count"] = pd.to_numeric(tweets_df["retweet_count"], errors="coerce").fillna(0).astype(int)
+tweets_df["favorite_count"] = pd.to_numeric(tweets_df["favorite_count"], errors="coerce").fillna(0).astype(int)
+tweets_df["confidence"] = pd.to_numeric(tweets_df["confidence"], errors="coerce")
+
+# Neutral basé sur confidence
+tweets_df["sentiment_display"] = tweets_df["sentiment_label"].astype(str).str.lower()
+
+# si pas de sentiment_label, on ne peut pas afficher -> stop propre
+if tweets_df["sentiment_display"].isna().all():
+    st.error("❌ Colonne sentiment_label absente/invalide dans la DB.")
     st.stop()
 
-# Nettoyage/conversions
-try:
-    tweets_df['created_at'] = pd.to_datetime(tweets_df['created_at'].astype(str), errors='coerce', utc=True)
-    tweets_df['retweet_count'] = pd.to_numeric(tweets_df.get('retweet_count', 0), errors='coerce').fillna(0).astype(int)
-    tweets_df['favorite_count'] = pd.to_numeric(tweets_df.get('favorite_count', 0), errors='coerce').fillna(0).astype(int)
-    tweets_df['confidence'] = pd.to_numeric(tweets_df.get('confidence', None), errors='coerce')
-except Exception as e:
-    st.error(f"❌ Erreur de conversion: {e}")
-    st.stop()
+# Neutralization (incertain)
+conf_series = tweets_df["confidence"].fillna(0)
+tweets_df.loc[conf_series < neutral_threshold, "sentiment_display"] = "neutral"
 
-# Couleurs Plotly
-SENTIMENT_COLOR_MAP = {
-    'positive': '#28A745',
-    'neutral': '#FFC107',
-    'negative': '#DC3545'
-}
+# Engagement + time columns
+tweets_df["total_engagement"] = tweets_df["retweet_count"] + tweets_df["favorite_count"]
+tweets_df["day"] = tweets_df["created_at"].dt.date
+tweets_df["hour"] = tweets_df["created_at"].dt.hour
 
-# Masque
-mask = tweets_df['sentiment_label'].isin(sentiment_filter)
+# Détermination période disponible (si dates parsables)
+disable_date_filter = False
+if tweets_df["created_at"].isna().mean() > 0.7:
+    disable_date_filter = True
+    st.sidebar.warning("⚠️ created_at non parsable majoritairement → filtre date désactivé.")
+else:
+    min_date = tweets_df["created_at"].min().date()
+    max_date = tweets_df["created_at"].max().date()
 
+    date_range = st.sidebar.date_input(
+        "🗓️ Période",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date,
+    )
+
+
+# ----------------------------
+# Apply filters
+# ----------------------------
+mask = tweets_df["sentiment_display"].isin(sentiment_filter)
+
+# filtre confidence "dur" (optionnel)
+mask &= (tweets_df["confidence"].fillna(0) >= min_confidence)
+
+# filtre date si possible
 if not disable_date_filter:
-    mask = mask & (tweets_df['created_at'].dt.date >= date_range[0]) & (tweets_df['created_at'].dt.date <= date_range[1])
+    mask &= (tweets_df["created_at"].dt.date >= date_range[0]) & (tweets_df["created_at"].dt.date <= date_range[1])
 
-if 'confidence' in tweets_df.columns:
-    mask = mask & (tweets_df['confidence'].fillna(0) >= min_confidence)
-
+# recherche
 if search_query:
-    search_mask = tweets_df['text'].astype(str).str.contains(search_query, case=False, na=False) | \
-                  tweets_df['clean_text'].astype(str).str.contains(search_query, case=False, na=False)
-    mask = mask & search_mask
+    s = search_query.strip()
+    if s:
+        mask &= (
+            tweets_df["text"].astype(str).str.contains(s, case=False, na=False) |
+            tweets_df["clean_text"].astype(str).str.contains(s, case=False, na=False)
+        )
 
 filtered_df = tweets_df[mask].copy()
 
+st.sidebar.markdown("---")
+st.sidebar.info(f"📌 Après filtres: {len(filtered_df)} tweets")
+
 if filtered_df.empty:
-    st.warning("Aucun tweet ne correspond aux filtres sélectionnés.")
-    st.sidebar.warning("❌ **Filtré :** 0 tweet.")
+    st.warning("Aucun tweet ne correspond aux filtres.")
+    with st.expander("🧪 Diagnostic rapide"):
+        st.write("- Essaie d’élargir la période, ou remettre le filtre sentiment sur tout.")
+        st.write("- Mets min_confidence à 0.0.")
+        st.write("- Désactive la recherche mots-clés.")
+        st.write("- Augmente tweet_limit.")
     st.stop()
 
-st.sidebar.success(f"📈 **Filtré :** {len(filtered_df)} tweets.")
 
-# Engagement + colonnes temps
-filtered_df['total_engagement'] = filtered_df['retweet_count'] + filtered_df['favorite_count']
-filtered_df['day'] = filtered_df['created_at'].dt.date
-filtered_df['hour'] = filtered_df['created_at'].dt.hour
+# ----------------------------
+# Tabs layout (version pro)
+# ----------------------------
+tab1, tab2, tab3, tab4 = st.tabs(["📌 Overview", "📈 Trends", "🧠 Model Quality", "📝 Explore Tweets"])
 
-# KPIs
-st.subheader("✨ Métriques Principales")
-col1, col2, col3, col4, col5 = st.columns(5)
 
-total_tweets = len(filtered_df)
-positive_tweets = (filtered_df['sentiment_label'] == 'positive').sum()
-neutral_tweets = (filtered_df['sentiment_label'] == 'neutral').sum()
-negative_tweets = (filtered_df['sentiment_label'] == 'negative').sum()
+# ----------------------------
+# TAB 1: Overview
+# ----------------------------
+with tab1:
+    st.markdown('<div class="section-title"><h2>Vue d’ensemble</h2></div>', unsafe_allow_html=True)
 
-with col1:
-    st.metric("Total Tweets", total_tweets)
-with col2:
-    st.metric("👍 Positifs", positive_tweets)
-with col3:
-    st.metric("⚪ Neutres", neutral_tweets)
-with col4:
-    st.metric("👎 Négatifs", negative_tweets)
-with col5:
-    score_pos = (positive_tweets / total_tweets) * 100 if total_tweets else 0
-    st.metric("🎯 Score Positif", f"{score_pos:.1f}%")
+    total = len(filtered_df)
+    pos = int((filtered_df["sentiment_display"] == "positive").sum())
+    neu = int((filtered_df["sentiment_display"] == "neutral").sum())
+    neg = int((filtered_df["sentiment_display"] == "negative").sum())
 
-st.markdown("---")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Total tweets", total)
+    c2.metric("👍 Positifs", pos)
+    c3.metric("⚪ Neutres (incertains)", neu)
+    c4.metric("👎 Négatifs", neg)
+    c5.metric("🎯 Positif (%)", f"{(pos/total*100 if total else 0):.1f}%")
 
-# IA insight
-with st.spinner("💡 L'IA analyse vos données..."):
-    ai_insight = generate_ai_insight(search_query, total_tweets, positive_tweets, neutral_tweets, negative_tweets)
-st.markdown(f'<div class="ai-card"><strong>💡 Analyse IA & Insights :</strong><br>{ai_insight}</div>', unsafe_allow_html=True)
+    # IA insight (optionnel)
+    with st.spinner("💡 Génération d'insights..."):
+        insight = generate_ai_insight(search_query, total, pos, neu, neg)
+    st.markdown(f'<div class="ai-card"><strong>💡 Insights (IA optionnelle / fallback local)</strong><br>{insight}</div>', unsafe_allow_html=True)
 
-# Ligne 1 graphes
-c1, c2 = st.columns(2)
+    colA, colB = st.columns(2)
 
-with c1:
-    st.subheader("📈 Distribution des Sentiments")
-    sentiment_counts = filtered_df['sentiment_label'].value_counts()
-    fig_pie = px.pie(
-        values=sentiment_counts.values,
-        names=sentiment_counts.index,
-        color=sentiment_counts.index,
-        color_discrete_map=SENTIMENT_COLOR_MAP
-    )
-    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-    st.plotly_chart(fig_pie, use_container_width=True)
-
-with c2:
-    st.subheader("🎯 Confiance par sentiment (Histogramme)")
-    df_plot = filtered_df[['sentiment_label', 'confidence']].dropna()
-    if not df_plot.empty:
-        fig_hist = px.histogram(
-            df_plot,
-            x="confidence",
-            color="sentiment_label",
-            histnorm='percent',
-            nbins=10,
+    with colA:
+        st.subheader("📊 Distribution des sentiments (affiché)")
+        counts = filtered_df["sentiment_display"].value_counts()
+        fig_pie = px.pie(
+            values=counts.values,
+            names=counts.index,
+            color=counts.index,
             color_discrete_map=SENTIMENT_COLOR_MAP,
-            labels={'confidence': 'Score de Confiance', 'percent': 'Pourcentage'}
         )
-        fig_hist.update_layout(barmode='group')
-        st.plotly_chart(fig_hist, use_container_width=True)
-    else:
-        st.info("Pas de données de confiance.")
+        fig_pie.update_traces(textposition="inside", textinfo="percent+label")
+        st.plotly_chart(fig_pie, use_container_width=True)
 
-# Ligne 2 graphes
-st.markdown("---")
-c3, c4 = st.columns(2)
+    with colB:
+        st.subheader("💬 Engagement (RT + Likes) par sentiment")
+        tmp = filtered_df.groupby("sentiment_display")["total_engagement"].mean().reset_index()
+        tmp = tmp.sort_values("total_engagement", ascending=False)
 
-with c3:
-    st.subheader("👤 Top 10 Utilisateurs les Plus Actifs")
-    if 'user_name' in filtered_df.columns:
-        top_users = filtered_df['user_name'].fillna("Unknown").value_counts().nlargest(10).reset_index()
-        top_users.columns = ['user_name', 'tweet_count']
-        fig_users = px.bar(
-            top_users,
-            x='tweet_count',
-            y='user_name',
-            orientation='h',
-            title="Volume de Tweets par Utilisateur",
-            template='plotly_white'
+        fig_eng = px.bar(
+            tmp,
+            x="sentiment_display",
+            y="total_engagement",
+            color="sentiment_display",
+            color_discrete_map=SENTIMENT_COLOR_MAP,
+            labels={"sentiment_display": "Sentiment", "total_engagement": "Engagement moyen"},
         )
-        fig_users.update_layout(yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig_users, use_container_width=True)
+        st.plotly_chart(fig_eng, use_container_width=True)
+
+
+# ----------------------------
+# TAB 2: Trends
+# ----------------------------
+with tab2:
+    st.markdown('<div class="section-title"><h2>Tendances & évolution</h2></div>', unsafe_allow_html=True)
+
+    if disable_date_filter and filtered_df["created_at"].isna().all():
+        st.info("Les dates sont indisponibles → certaines analyses temporelles ne peuvent pas s’afficher.")
     else:
-        st.info("Colonne user_name manquante.")
+        # Evolution quotidienne (barres sentiment + ligne total)
+        st.subheader("🗓️ Évolution quotidienne (sentiments + total)")
+        daily = filtered_df.dropna(subset=["created_at"]).copy()
+        daily["d"] = daily["created_at"].dt.date.astype(str)
 
-with c4:
-    st.subheader("🗓️ Évolution Temporelle par Sentiment (Barres + Ligne)")
-    daily_sentiment = filtered_df.groupby([filtered_df['day'], 'sentiment_label']).size().reset_index(name='count')
+        daily_sent = daily.groupby(["d", "sentiment_display"]).size().reset_index(name="count")
+        daily_total = daily_sent.groupby("d")["count"].sum().reset_index(name="total")
 
-    if not daily_sentiment.empty:
-        daily_sentiment['day'] = daily_sentiment['day'].astype(str)
-        daily_total = daily_sentiment.groupby('day')['count'].sum().reset_index(name='total_count')
-
-        fig_evo = go.Figure()
+        fig = go.Figure()
         for s, color in SENTIMENT_COLOR_MAP.items():
-            df_s = daily_sentiment[daily_sentiment['sentiment_label'] == s]
-            fig_evo.add_trace(go.Bar(x=df_s['day'], y=df_s['count'], name=s.capitalize(), marker_color=color, opacity=0.85))
+            ds = daily_sent[daily_sent["sentiment_display"] == s]
+            fig.add_trace(go.Bar(x=ds["d"], y=ds["count"], name=s.capitalize(), marker_color=color, opacity=0.85))
 
-        LINE_COLOR = '#007AFF'
-        fig_evo.add_trace(go.Scatter(
-            x=daily_total['day'], y=daily_total['total_count'],
-            mode='lines+markers', name='Total',
-            marker=dict(color=LINE_COLOR, size=8),
-            line=dict(color=LINE_COLOR, width=3),
-            yaxis='y2'
+        fig.add_trace(go.Scatter(
+            x=daily_total["d"], y=daily_total["total"],
+            mode="lines+markers", name="Total",
+            line=dict(width=3, color="#007AFF"),
+            marker=dict(size=7, color="#007AFF"),
+            yaxis="y2"
         ))
 
-        fig_evo.update_layout(
-            title="Volume Quotidien (Sentiment + Total)",
-            xaxis=dict(type='category', title='Date'),
-            yaxis=dict(title='Nombre de Tweets (Sentiment)', showgrid=False),
-            yaxis2=dict(title='Total', overlaying='y', side='right', showgrid=False),
-            barmode='group',
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        fig.update_layout(
+            barmode="group",
+            xaxis=dict(title="Date", type="category"),
+            yaxis=dict(title="Tweets (par sentiment)", showgrid=False),
+            yaxis2=dict(title="Total", overlaying="y", side="right", showgrid=False),
+            legend=dict(orientation="h", y=1.02, x=1, xanchor="right"),
         )
-        st.plotly_chart(fig_evo, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Heatmap Sentiment x Jour
+        st.subheader("🔥 Heatmap (sentiment × jour)")
+        heat = daily.groupby([daily["created_at"].dt.date, "sentiment_display"]).size().reset_index(name="count")
+        heat_pivot = heat.pivot(index="sentiment_display", columns="created_at", values="count").fillna(0)
+        fig_heat = px.imshow(
+            heat_pivot,
+            aspect="auto",
+            labels=dict(x="Jour", y="Sentiment", color="Nb tweets"),
+        )
+        st.plotly_chart(fig_heat, use_container_width=True)
+
+        # Activité par heure
+        st.subheader("⏰ Activité par heure")
+        h = daily.groupby(daily["created_at"].dt.hour).size().reset_index(name="count")
+        h.columns = ["hour", "count"]
+        fig_hour = px.bar(h, x="hour", y="count", labels={"hour": "Heure", "count": "Nb tweets"})
+        st.plotly_chart(fig_hour, use_container_width=True)
+
+    # Scatter confiance vs engagement
+    st.subheader("📌 Relation Confiance vs Engagement")
+    sc = filtered_df[["confidence", "total_engagement", "sentiment_display"]].dropna()
+    if len(sc) > 6000:
+        sc = sc.sample(6000, random_state=42)
+
+    if sc.empty:
+        st.info("Pas assez de données pour afficher ce graphe.")
     else:
-        st.info("Pas assez de données pour l'évolution temporelle.")
+        fig_sc = px.scatter(
+            sc,
+            x="confidence",
+            y="total_engagement",
+            color="sentiment_display",
+            color_discrete_map=SENTIMENT_COLOR_MAP,
+            opacity=0.6,
+            labels={"confidence": "Confidence", "total_engagement": "Engagement total"},
+        )
+        st.plotly_chart(fig_sc, use_container_width=True)
 
-# --- NOUVEAUX GRAPHES ---
-st.markdown("---")
-st.subheader("🔥 Heatmap : Volume de Tweets par Jour et Sentiment")
-heat_df = filtered_df.groupby(['day', 'sentiment_label']).size().reset_index(name='count')
-heat_pivot = heat_df.pivot(index='sentiment_label', columns='day', values='count').fillna(0)
-fig_heat = px.imshow(
-    heat_pivot,
-    aspect="auto",
-    labels=dict(x="Jour", y="Sentiment", color="Nombre"),
-    title="Heatmap Sentiment × Jour"
-)
-st.plotly_chart(fig_heat, use_container_width=True)
 
-st.subheader("📦 Confiance du modèle par Sentiment (Boxplot)")
-df_conf = filtered_df[['sentiment_label', 'confidence']].dropna()
-if not df_conf.empty:
-    fig_box_conf = px.box(
-        df_conf,
-        x='sentiment_label',
-        y='confidence',
-        color='sentiment_label',
-        color_discrete_map=SENTIMENT_COLOR_MAP,
-        title="Distribution de la confiance par sentiment"
-    )
-    st.plotly_chart(fig_box_conf, use_container_width=True)
-else:
-    st.info("Pas assez de données pour le boxplot de confiance.")
+# ----------------------------
+# TAB 3: Model Quality
+# ----------------------------
+with tab3:
+    st.markdown('<div class="section-title"><h2>Qualité du modèle</h2></div>', unsafe_allow_html=True)
 
-st.subheader("💬 Engagement par Sentiment (Boxplot + Moyenne)")
-df_eng = filtered_df[['sentiment_label', 'total_engagement']].dropna()
-if not df_eng.empty:
-    fig_box_eng = px.box(
-        df_eng,
-        x='sentiment_label',
-        y='total_engagement',
-        color='sentiment_label',
-        color_discrete_map=SENTIMENT_COLOR_MAP,
-        title="Engagement (RT + Likes) par sentiment"
-    )
-    st.plotly_chart(fig_box_eng, use_container_width=True)
+    # Model Health KPIs
+    avg_conf = float(filtered_df["confidence"].dropna().mean()) if filtered_df["confidence"].notna().any() else 0.0
+    low_conf_rate = float((filtered_df["confidence"].fillna(0) < neutral_threshold).mean() * 100)
+    neu_rate = float((filtered_df["sentiment_display"] == "neutral").mean() * 100)
 
-    eng_mean = df_eng.groupby('sentiment_label')['total_engagement'].mean().sort_values(ascending=False).reset_index()
-    fig_eng_mean = px.bar(
-        eng_mean,
-        x='sentiment_label',
-        y='total_engagement',
-        color='sentiment_label',
-        color_discrete_map=SENTIMENT_COLOR_MAP,
-        title="Engagement moyen par sentiment",
-        labels={'total_engagement': 'Engagement moyen'}
-    )
-    st.plotly_chart(fig_eng_mean, use_container_width=True)
-else:
-    st.info("Pas assez de données pour les graphes d'engagement.")
+    t1, t2, t3, t4 = st.columns(4)
+    t1.metric("Avg confidence", f"{avg_conf:.2f}")
+    t2.metric("Neutral (incertain) %", f"{neu_rate:.1f}%")
+    t3.metric("Low confidence %", f"{low_conf_rate:.1f}%")
+    t4.metric("Seuil neutral", f"{neutral_threshold:.2f}")
 
-st.subheader("📌 Relation : Confiance vs Engagement (Scatter)")
-scatter_df = filtered_df[['confidence', 'total_engagement', 'sentiment_label']].dropna()
-if not scatter_df.empty:
-    if len(scatter_df) > 5000:
-        scatter_df = scatter_df.sample(5000, random_state=42)
+    # Confidence distributions
+    st.subheader("🎯 Distribution de la confiance")
+    conf_df = filtered_df[["sentiment_display", "confidence"]].dropna()
+    if conf_df.empty:
+        st.info("Pas de colonne confidence (ou vide).")
+    else:
+        colX, colY = st.columns(2)
+        with colX:
+            fig_hist = px.histogram(
+                conf_df,
+                x="confidence",
+                color="sentiment_display",
+                color_discrete_map=SENTIMENT_COLOR_MAP,
+                nbins=20,
+                histnorm="percent",
+                labels={"confidence": "Confidence", "percent": "%"},
+            )
+            fig_hist.update_layout(barmode="group")
+            st.plotly_chart(fig_hist, use_container_width=True)
 
-    fig_scatter = px.scatter(
-        scatter_df,
-        x='confidence',
-        y='total_engagement',
-        color='sentiment_label',
-        color_discrete_map=SENTIMENT_COLOR_MAP,
-        opacity=0.6,
-        title="Confiance du modèle vs Engagement",
-        labels={'total_engagement': 'Engagement total'}
-    )
-    st.plotly_chart(fig_scatter, use_container_width=True)
-else:
-    st.info("Pas assez de données pour le scatter.")
-# ------------------------
+        with colY:
+            fig_box = px.box(
+                conf_df,
+                x="sentiment_display",
+                y="confidence",
+                color="sentiment_display",
+                color_discrete_map=SENTIMENT_COLOR_MAP,
+                labels={"sentiment_display": "Sentiment affiché", "confidence": "Confidence"},
+            )
+            st.plotly_chart(fig_box, use_container_width=True)
 
-# Table tweets
-st.subheader("📝 Tweets Récents Analysés")
-display_columns = st.multiselect(
-    "Colonnes à afficher :",
-    options=['created_at', 'user_name', 'clean_text', 'sentiment_label', 'confidence',
-             'retweet_count', 'favorite_count', 'total_engagement'],
-    default=['created_at', 'user_name', 'clean_text', 'sentiment_label', 'confidence']
-)
+    # Model comparison from CSV
+    st.subheader("⚖️ Comparaison des modèles (expérimentation)")
+    st.caption("Généré par `python -m src.ml.compare_models` → data/models/model_comparison.csv")
 
-if display_columns:
-    def color_sentiment(row):
-        colors = {
-            'positive': 'background-color: #E6F7ED; color: black;',
-            'negative': 'background-color: #FEE7E9; color: black;',
-            'neutral': 'background-color: #FFF9E6; color: black;'
-        }
-        return [colors.get(row.get('sentiment_label', ''), '')] * len(row)
+    try:
+        comp = pd.read_csv(os.path.join(project_root, "data", "models", "model_comparison.csv"))
+        if not comp.empty and "model" in comp.columns:
+            comp_sorted = comp.sort_values("f1_macro", ascending=False)
 
-    display_df = filtered_df[display_columns].head(50)
-    styled_df = display_df.style.apply(color_sentiment, axis=1)
-    st.dataframe(styled_df, use_container_width=True, height=400)
+            fig_f1 = px.bar(
+                comp_sorted,
+                x="model",
+                y="f1_macro",
+                color="model",
+                title="Comparaison (F1_macro)",
+                labels={"model": "Modèle", "f1_macro": "F1 macro"},
+            )
+            st.plotly_chart(fig_f1, use_container_width=True)
 
-    csv = filtered_df[display_columns].to_csv(index=False)
+            # Option temps si présent
+            if "train_time_sec" in comp_sorted.columns:
+                fig_time = px.bar(
+                    comp_sorted,
+                    x="model",
+                    y="train_time_sec",
+                    color="model",
+                    title="Temps d'entraînement (s)",
+                    labels={"train_time_sec": "Secondes"},
+                )
+                st.plotly_chart(fig_time, use_container_width=True)
+
+            if "predict_time_sec" in comp_sorted.columns:
+                fig_pred = px.bar(
+                    comp_sorted,
+                    x="model",
+                    y="predict_time_sec",
+                    color="model",
+                    title="Temps de prédiction (s)",
+                    labels={"predict_time_sec": "Secondes"},
+                )
+                st.plotly_chart(fig_pred, use_container_width=True)
+
+            st.dataframe(comp_sorted, use_container_width=True)
+        else:
+            st.info("model_comparison.csv vide ou colonnes inattendues.")
+    except Exception:
+        st.info("Pas encore de model_comparison.csv. Lance la comparaison pour l’afficher ici.")
+
+    with st.expander("🧪 Diagnostic & Cohérence"):
+        st.write("- Neutral est défini comme **incertitude** (confidence < seuil).")
+        st.write("- Le seuil est ajustable et doit être mentionné dans la méthodologie.")
+        st.write("- Les graphiques utilisent `sentiment_display` (et non `sentiment_label`) pour refléter neutral.")
+
+
+# ----------------------------
+# TAB 4: Explore Tweets
+# ----------------------------
+with tab4:
+    st.markdown('<div class="section-title"><h2>Exploration des tweets</h2></div>', unsafe_allow_html=True)
+
+    # Colonnes affichables
+    options = [
+        "created_at", "user_name", "text", "clean_text",
+        "sentiment_label", "sentiment_display",
+        "confidence", "retweet_count", "favorite_count", "total_engagement"
+    ]
+    default_cols = ["created_at", "user_name", "clean_text", "sentiment_display", "confidence"]
+
+    display_columns = st.multiselect("Colonnes à afficher", options=options, default=default_cols)
+
+    # Table
+    show_n = st.slider("Nombre de lignes", 10, 200, 50, 10)
+    df_show = filtered_df[display_columns].head(show_n).copy()
+
+    # Styling sentiment
+    def style_row(row):
+        s = str(row.get("sentiment_display", ""))
+        if s == "positive":
+            return ["background-color:#E6F7ED; color:black;"] * len(row)
+        if s == "negative":
+            return ["background-color:#FEE7E9; color:black;"] * len(row)
+        if s == "neutral":
+            return ["background-color:#FFF9E6; color:black;"] * len(row)
+        return [""] * len(row)
+
+    try:
+        st.dataframe(df_show.style.apply(style_row, axis=1), use_container_width=True, height=420)
+    except Exception:
+        st.dataframe(df_show, use_container_width=True, height=420)
+
+    # Export CSV
+    st.markdown("### 📥 Export")
+    export_df = filtered_df[display_columns].copy()
+    csv_bytes = export_df.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="📥 Télécharger les données (CSV)",
-        data=csv,
-        file_name=f"tweets_sentiment_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-        mime="text/csv"
+        "Télécharger CSV (filtré)",
+        data=csv_bytes,
+        file_name=f"tweets_filtered_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv",
     )
 
-# Footer
+
+# ----------------------------
+# Footer + Diagnostics global
+# ----------------------------
 st.markdown("---")
+with st.expander("🧾 Diagnostics techniques "):
+    st.write(f"- Tweets chargés DB: {len(tweets_df)}")
+    st.write(f"- Tweets après filtres: {len(filtered_df)}")
+    st.write(f"- created_at NaT rate: {tweets_df['created_at'].isna().mean():.2%}")
+    st.write(f"- Neutral threshold: {neutral_threshold:.2f}")
+    st.write(f"- Min confidence (hard filter): {min_confidence:.2f}")
+    st.write("Si tu vois 0 tweet après filtres: augmente tweet_limit, enlève la recherche, remets sentiments sur tout.")
+
 st.markdown(
-    """
-    <div style='text-align: center; color: gray;'>
-        📈 Dashboard d'Analyse de Sentiment Twitter - Développé avec Streamlit
-    </div>
-    """,
-    unsafe_allow_html=True
+    "<div style='text-align:center;color:gray;'>📈 Twitter Sentiment Dashboard • Streamlit • Neutral = incertitude (confidence)</div>",
+    unsafe_allow_html=True,
 )
