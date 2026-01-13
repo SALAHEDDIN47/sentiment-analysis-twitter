@@ -176,6 +176,10 @@ st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 def init_db():
     return DatabaseManager()
 
+st.sidebar.write(f"DEBUG: Shape du DataFrame chargé: {df.shape}")
+st.sidebar.write(f"DEBUG: Colonnes: {list(df.columns)}")
+st.sidebar.write(f"DEBUG: 3 premières lignes:", df.head(3) if not df.empty else "DataFrame vide")
+
 try:
     db = init_db()
 except Exception as e:
@@ -185,9 +189,9 @@ except Exception as e:
 
 # --- Couleurs des sentiments ---
 SENTIMENT_COLOR_MAP = {
-    "positive": "#28A745",
-    "neutral":  "#FFC107",
-    "negative": "#DC3545",
+    "positive": "#3BFB4B",
+    "neutral":  "#2243E7",
+    "negative": "#EC2626",
 }
 
 def parse_datetime_safe(series: pd.Series) -> pd.Series:
@@ -255,6 +259,40 @@ Donne un insight court et clair (2-3 phrases) en français.
     else:
         texte += "Opinions mitigées: interprétation nuancée selon période et sujets."
     return texte
+def generate_ai_insight(query, total, pos, neu, neg):
+    """IA  (Groq)."""
+    api_key = os.getenv("GROQ_API_KEY")
+
+    pos_pct = (pos / total) * 100 if total else 0
+    neu_pct = (neu / total) * 100 if total else 0
+    neg_pct = (neg / total) * 100 if total else 0
+
+    # IA (si dispo)
+    if api_key and Groq:
+        try:
+            client = Groq(api_key=api_key)
+            prompt = f"""
+            Agis comme un expert en analyse de données sociales.
+            Sujet: "{query if query else 'Global'}"
+            Total: {total}
+            Positif: {pos_pct:.1f}%
+            Neutre (incertain): {neu_pct:.1f}%
+            Négatif: {neg_pct:.1f}%
+
+            Donne 3-4 lignes max en français, style pro. Si négatif > 30%: alerte.
+            Ne commence pas par "Voici l'analyse".
+            """
+            completion = client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama-3.1-8b-instant",
+            )
+            return completion.choices[0].message.content
+        except Exception:
+            pass
+
+    # Fallback
+    else:
+        return print("IA non disponible ou Groq non installé.")
 
 # --- Chargement données ---
 @st.cache_data(ttl=300)
@@ -275,9 +313,9 @@ recherche = st.sidebar.text_input(
 limite_tweets = st.sidebar.slider(
     "Tweets (max chargés depuis la base)",
     min_value=200,
-    max_value=50000,
+    max_value=100000,
     value=5000,
-    step=200,
+    step=100,
 )
 
 filtre_sentiment = st.sidebar.multiselect(

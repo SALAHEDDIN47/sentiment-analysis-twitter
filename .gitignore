@@ -54,4 +54,7 @@ Thumbs.db
 
 # Streamlit
 .streamlit/
-data.csv
+# Données
+*.csv
+*.txt
+data/raw
