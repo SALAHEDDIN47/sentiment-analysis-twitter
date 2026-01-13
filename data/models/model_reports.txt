@@ -6,8 +6,8 @@ Accuracy: 0.7734
 F1_macro: 0.7733
 Precision_macro: 0.7739
 Recall_macro: 0.7734
-Train_time_sec: 1.61
-Predict_time_sec: 0.01
+Train_time_sec: 1.42
+Predict_time_sec: 0.00
 Confusion matrix:
 [[15005  4966]
  [ 4097 15932]]
@@ -29,7 +29,7 @@ Accuracy: 0.7701
 F1_macro: 0.7699
 Precision_macro: 0.7708
 Recall_macro: 0.7700
-Train_time_sec: 2.12
+Train_time_sec: 2.05
 Predict_time_sec: 0.00
 Confusion matrix:
 [[14843  5128]
@@ -52,8 +52,8 @@ Accuracy: 0.7621
 F1_macro: 0.7621
 Precision_macro: 0.7622
 Recall_macro: 0.7621
-Train_time_sec: 0.65
-Predict_time_sec: 0.01
+Train_time_sec: 0.49
+Predict_time_sec: 0.02
 Confusion matrix:
 [[15131  4840]
  [ 4674 15355]]

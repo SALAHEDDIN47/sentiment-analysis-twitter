@@ -28,7 +28,7 @@ from sklearn.metrics import (
 
 from src.preprocessing.text_cleaner import TextCleaner
 
-DATASET_PATH = "data/raw/data.csv"
+DATASET_PATH = "data/raw/dataset.csv"
 
 # ----- Réglages performance -----
 MAX_SAMPLES = 200_000     # Mets 50_000 si PC lent
@@ -42,7 +42,7 @@ RANDOM_STATE = 42
 
 def load_sentiment140(path: str) -> pd.DataFrame:
     """
-    Charge Sentiment140 (Kaggle) renommé en data.csv.
+    Charge Sentiment140 (Kaggle) renommé en dataset.csv.
     Format d'origine:
     target,id,date,flag,user,text
     target: 0 = négatif, 4 = positif

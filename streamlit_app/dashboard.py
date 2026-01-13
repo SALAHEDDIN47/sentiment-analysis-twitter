@@ -103,6 +103,10 @@ st.markdown("---")
 def init_db():
     return DatabaseManager()
 
+st.sidebar.write(f"DEBUG: Shape du DataFrame chargé: {df.shape}")
+st.sidebar.write(f"DEBUG: Colonnes: {list(df.columns)}")
+st.sidebar.write(f"DEBUG: 3 premières lignes:", df.head(3) if not df.empty else "DataFrame vide")
+
 try:
     db = init_db()
 except Exception as e:
@@ -118,9 +122,9 @@ except Exception as e:
 # Helpers
 # ----------------------------
 SENTIMENT_COLOR_MAP = {
-    "positive": "#28A745",
-    "neutral":  "#FFC107",
-    "negative": "#DC3545",
+    "positive": "#3BFB4B",
+    "neutral":  "#2243E7",
+    "negative": "#EC2626",
 }
 
 def safe_parse_datetime(series: pd.Series) -> pd.Series:
@@ -128,7 +132,7 @@ def safe_parse_datetime(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series.astype(str), errors="coerce", utc=True)
 
 def generate_ai_insight(query, total, pos, neu, neg):
-    """IA optionnelle (Groq) + fallback texte."""
+    """IA  (Groq)."""
     api_key = os.getenv("GROQ_API_KEY")
 
     pos_pct = (pos / total) * 100 if total else 0
@@ -159,20 +163,8 @@ def generate_ai_insight(query, total, pos, neu, neg):
             pass
 
     # Fallback
-    dominant = "positive" if pos >= neg and pos >= neu else ("negative" if neg > pos else "neutral")
-    topic = f"sur « {query} »" if query else "sur l’ensemble des données"
-    text = (
-        f"Sur **{total} tweets** {topic}, la tendance dominante est **{dominant}**. "
-        f"Positif: **{pos_pct:.1f}%**, Neutre (incertain): **{neu_pct:.1f}%**, Négatif: **{neg_pct:.1f}%**. "
-    )
-    if neg_pct > 30:
-        text += "⚠️ Le niveau de négativité est élevé : il faut analyser les causes (mots-clés, périodes, utilisateurs)."
-    elif pos_pct > 60:
-        text += "✅ Sentiment global très favorable : bonne réception de la communauté."
     else:
-        text += "ℹ️ Opinions partagées : interprétation nuancée selon la période et les sujets."
-    return text
-
+        return print("IA non disponible ou Groq non installé.")
 
 # ----------------------------
 # Data loader
@@ -198,9 +190,9 @@ search_query = st.sidebar.text_input(
 tweet_limit = st.sidebar.slider(
     "🔢 Tweets (max chargés depuis DB)",
     min_value=200,
-    max_value=50000,
+    max_value=100000,
     value=5000,
-    step=200,
+    step=100,
 )
 
 neutral_threshold = st.sidebar.slider(

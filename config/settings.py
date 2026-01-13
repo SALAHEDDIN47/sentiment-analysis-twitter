@@ -3,15 +3,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Configuration Twitter
-TWITTER_CONFIG = {
-    'api_key': os.getenv('TWITTER_API_KEY'),
-    'api_secret': os.getenv('TWITTER_API_SECRET'),
-    'access_token': os.getenv('TWITTER_ACCESS_TOKEN'),
-    'access_secret': os.getenv('TWITTER_ACCESS_SECRET'),
-    'bearer_token': os.getenv('TWITTER_BEARER_TOKEN')
-}
-
 # Configuration Database
 DB_CONFIG = {
     'host': os.getenv('DB_HOST'),
