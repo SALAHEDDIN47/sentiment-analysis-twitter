@@ -446,7 +446,6 @@ if df_filtre.empty:
 # --- Onglets ---
 tab1, tab2, tab3, tab4 = st.tabs(["Vue d'ensemble", "Tendances", "Qualité du modèle", "Explorer les tweets"])
 
-
 # --- TAB 1: Vue d'ensemble (Optimisée & Ultra-Robuste) ---
 with tab1:
     st.markdown('<div class="section-title">Analyse du Flux Filtré</div>', unsafe_allow_html=True)
@@ -461,10 +460,14 @@ with tab1:
         neg = int((df_filtre["sentiment_display"] == "negative").sum())
 
         col1, col2, col3, col4, col5 = st.columns(5)
-        with col1: st.markdown(f'<div class="kpi-card"><div class="kpi-value">{total:,}</div><div class="kpi-label">Volume Filtré</div></div>', unsafe_allow_html=True)
-        with col2: st.markdown(f'<div class="kpi-card"><div class="kpi-value" style="color:#28a745">{pos:,}</div><div class="kpi-label">Positifs</div></div>', unsafe_allow_html=True)
-        with col3: st.markdown(f'<div class="kpi-card"><div class="kpi-value" style="color:#6c757d">{neu:,}</div><div class="kpi-label">Neutres</div></div>', unsafe_allow_html=True)
-        with col4: st.markdown(f'<div class="kpi-card"><div class="kpi-value" style="color:#dc3545">{neg:,}</div><div class="kpi-label">Négatifs</div></div>', unsafe_allow_html=True)
+        with col1: 
+            st.markdown(f'<div class="kpi-card"><div class="kpi-value">{total:,}</div><div class="kpi-label">Volume Filtré</div></div>', unsafe_allow_html=True)
+        with col2: 
+            st.markdown(f'<div class="kpi-card"><div class="kpi-value" style="color:#28a745">{pos:,}</div><div class="kpi-label">Positifs</div></div>', unsafe_allow_html=True)
+        with col3: 
+            st.markdown(f'<div class="kpi-card"><div class="kpi-value" style="color:#6c757d">{neu:,}</div><div class="kpi-label">Neutres</div></div>', unsafe_allow_html=True)
+        with col4: 
+            st.markdown(f'<div class="kpi-card"><div class="kpi-value" style="color:#dc3545">{neg:,}</div><div class="kpi-label">Négatifs</div></div>', unsafe_allow_html=True)
         with col5:
             pos_pct = (pos/total*100) if total else 0
             st.markdown(f'<div class="kpi-card"><div class="kpi-value">{pos_pct:.1f}%</div><div class="kpi-label">Taux Positif</div></div>', unsafe_allow_html=True)
@@ -497,89 +500,141 @@ with tab1:
                     st.markdown(f'<div class="ai-card" style="border-left: 5px solid #6f42c1;"><strong>🔍 Analyse sur Mesure</strong><div class="ai-content" style="line-height: 1.3;">{completion.choices[0].message.content}</div></div>', unsafe_allow_html=True)
                 except: st.info("Diagnostic IA non disponible.")
 
-        # 3. VISUALISATION DES FORCES (CORRIGÉ POUR FILTRES FAIBLES)
+        # 3. VISUALISATION DES FORCES
         colA, colB = st.columns(2)
 
+        # 3a. Part de voix (pie chart)
         with colA:
             st.markdown('<div class="subsection-title">Part de voix (Volume)</div>', unsafe_allow_html=True)
             counts = df_filtre["sentiment_display"].value_counts().reset_index()
+            counts.columns = ["Sentiment", "count"]
+            
             fig_pie = px.pie(
-                counts, values='count', names='sentiment_display',
-                color='sentiment_display', color_discrete_map=SENTIMENT_COLOR_MAP,
+                counts, 
+                values='count', 
+                names='Sentiment',
+                color='Sentiment', 
+                color_discrete_map=SENTIMENT_COLOR_MAP,
                 hole=0.5
             )
             fig_pie.update_traces(textposition="inside", textinfo="percent")
             fig_pie.update_layout(showlegend=True, margin=dict(t=10, b=10, l=10, r=10))
             st.plotly_chart(fig_pie, use_container_width=True)
 
+        # 3b. Nombre de Tweets par Sentiment (bar chart)
         with colB:
-            st.markdown('<div class="subsection-title">Impact vs Présence</div>', unsafe_allow_html=True)
+            st.markdown('<div class="subsection-title">Nombre de Tweets par Sentiment</div>', unsafe_allow_html=True)
             
-            # Agrégation sécurisée
-            impact_df = df_filtre.groupby("sentiment_display").agg({
-                'text': 'count',
-                'total_engagement': 'sum'
-            }).rename(columns={'text': 'Nb Tweets', 'total_engagement': 'Engagement'}).reset_index()
+            sentiment_count = df_filtre["sentiment_display"].value_counts().reset_index()
+            sentiment_count.columns = ["Sentiment", "Nb Tweets"]
 
-            # On utilise un graphique à barres groupées : beaucoup plus robuste que les bulles
-            fig_impact = px.bar(
-                impact_df, 
-                x="sentiment_display", 
-                y=["Nb Tweets", "Engagement"],
-                barmode="group",
-                color_discrete_sequence=["#D1D1D1", "#007AFF"], # Gris pour le volume, Bleu pour l'impact
-                labels={"value": "Quantité", "sentiment_display": "Sentiment", "variable": "Indicateur"}
+            fig_sent_bar = px.bar(
+                sentiment_count,
+                x="Sentiment",
+                y="Nb Tweets",
+                text="Nb Tweets",
+                color="Sentiment",
+                color_discrete_map=SENTIMENT_COLOR_MAP,
+                labels={"Nb Tweets": "Nombre de Tweets", "Sentiment": "Sentiment"}
             )
-            fig_impact.update_layout(
+            fig_sent_bar.update_traces(textposition="outside")
+            fig_sent_bar.update_layout(
                 plot_bgcolor="white",
                 xaxis_title=None,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                yaxis_title="Nombre de Tweets",
+                margin=dict(t=10, b=10, l=10, r=10),
+                showlegend=False
             )
-            st.plotly_chart(fig_impact, use_container_width=True)
+            st.plotly_chart(fig_sent_bar, use_container_width=True)
 
-# --- TAB 2: Tendances & Évolution ---
+# =====================================================
+# =====================================================
+# TAB 2 : TENDANCES & ÉVOLUTION (SANS COMPARAISON)
+# =====================================================
 with tab2:
-    st.markdown('<div class="section-title">Analyses Temporelles & Sémantiques</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Analyses Temporelles & Comportementales</div>',
+        unsafe_allow_html=True
+    )
 
-    if (desactiver_filtre_date and df_filtre["created_at"].isna().all()) or df_filtre.empty:
+    if df_filtre.empty or df_filtre["created_at"].isna().all():
         st.warning("⚠️ Données temporelles insuffisantes pour cette sélection.")
     else:
-        # --- 1. ÉVOLUTION DANS LE TEMPS (Version Simplifiée en Lignes) ---
-        st.markdown('<div class="subsection-title">Évolution temporelle des Sentiments</div>', unsafe_allow_html=True)
-        
+        # =====================================================
+        # 1. ÉVOLUTION TEMPORELLE DES SENTIMENTS (COULEURS INCHANGÉES)
+        # =====================================================
+        st.markdown(
+            '<div class="subsection-title">Évolution temporelle des Sentiments</div>',
+            unsafe_allow_html=True
+        )
+
         quotidien = df_filtre.dropna(subset=["created_at"]).copy()
-        df_evol = quotidien.groupby([quotidien["created_at"].dt.date, "sentiment_display"]).size().reset_index(name="Volume")
+
+        df_evol = (
+            quotidien
+            .groupby([quotidien["created_at"].dt.date, "sentiment_display"])
+            .size()
+            .reset_index(name="Volume")
+        )
         df_evol.columns = ["Date", "Sentiment", "Volume"]
 
-        # Utilisation de px.line au lieu de px.area pour plus de clarté
         fig_evol = px.line(
-            df_evol, 
-            x="Date", 
-            y="Volume", 
+            df_evol,
+            x="Date",
+            y="Volume",
             color="Sentiment",
-            color_discrete_map=SENTIMENT_COLOR_MAP,
-            markers=True, # Ajoute des points pour chaque date
+            color_discrete_map=SENTIMENT_COLOR_MAP,  # 🔒 COULEURS CONSERVÉES
+            markers=True,
             title="Volume quotidien par catégorie"
         )
-        
+
         fig_evol.update_layout(
-            plot_bgcolor="white", 
+            plot_bgcolor="white",
             hovermode="x unified",
-            xaxis=dict(gridcolor="#F8F9FA", tickangle=-45),
-            yaxis=dict(gridcolor="#F8F9FA"),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            xaxis=dict(gridcolor="#F2F2F2", tickangle=-45),
+            yaxis=dict(gridcolor="#F2F2F2"),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
         )
+
         st.plotly_chart(fig_evol, use_container_width=True)
 
-        # --- 2. HEATMAP D'ACTIVITÉ ---
-        st.markdown('<div class="subsection-title">Pics d\'Activité (Heure x Jour)</div>', unsafe_allow_html=True)
-        
-        jours_fr = {'Monday': 'Lun', 'Tuesday': 'Mar', 'Wednesday': 'Mer', 'Thursday': 'Jeu', 'Friday': 'Ven', 'Saturday': 'Sam', 'Sunday': 'Dim'}
-        quotidien['jour_fr'] = quotidien['created_at'].dt.day_name().map(jours_fr)
-        ordre_jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
+        # =====================================================
+        # 2. HEATMAP D’ACTIVITÉ (HEURE × JOUR)
+        # =====================================================
+        st.markdown(
+            '<div class="subsection-title">Pics d’Activité (Heure × Jour)</div>',
+            unsafe_allow_html=True
+        )
 
-        heat_data = quotidien.groupby(['hour', 'jour_fr']).size().reset_index(name='count')
-        heat_pivot = heat_data.pivot(index='jour_fr', columns='hour', values='count').reindex(ordre_jours).fillna(0)
+        jours_fr = {
+            "Monday": "Lun", "Tuesday": "Mar", "Wednesday": "Mer",
+            "Thursday": "Jeu", "Friday": "Ven",
+            "Saturday": "Sam", "Sunday": "Dim"
+        }
+
+        quotidien["hour"] = quotidien["created_at"].dt.hour
+        quotidien["jour_fr"] = quotidien["created_at"].dt.day_name().map(jours_fr)
+        ordre_jours = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+
+        heat_data = (
+            quotidien
+            .groupby(["jour_fr", "hour"])
+            .size()
+            .reset_index(name="Tweets")
+        )
+
+        heat_pivot = (
+            heat_data
+            .pivot(index="jour_fr", columns="hour", values="Tweets")
+            .reindex(ordre_jours)
+            .fillna(0)
+        )
 
         fig_heat = px.imshow(
             heat_pivot,
@@ -587,28 +642,40 @@ with tab2:
             color_continuous_scale="Blues",
             aspect="auto"
         )
-        fig_heat.update_layout(xaxis=dict(tickmode='linear', dtick=2))
+
+        fig_heat.update_layout(
+            xaxis=dict(tickmode="linear", dtick=2),
+            plot_bgcolor="white"
+        )
+
         st.plotly_chart(fig_heat, use_container_width=True)
 
-        # --- 3. INSIGHT IA TEMPOREL (GROQ) ---
-        st.markdown('<div class="subsection-title">Analyse des Pics (Groq)</div>', unsafe_allow_html=True)
-        
-        peak_hour = heat_data.loc[heat_data['count'].idxmax(), 'hour'] if not heat_data.empty else "N/A"
-        
+        # =====================================================
+        # 3. DIAGNOSTIC TECHNIQUE (IA – TIMING)
+        # =====================================================
+        st.markdown(
+            '<div class="subsection-title">Diagnostic Technique – Timing Optimal</div>',
+            unsafe_allow_html=True
+        )
+
+        peak_hour = (
+            heat_data.loc[heat_data["Tweets"].idxmax(), "hour"]
+            if not heat_data.empty else "N/A"
+        )
+
         prompt_trend = f"""
-        Analyste de tendances Twitter (MAX 5 LIGNES) :
+        Analyste Twitter (MAX 5 lignes) :
         Période : {quotidien['created_at'].min().date()} au {quotidien['created_at'].max().date()}.
-        Pic d'activité détecté à : {peak_hour}h.
-        Sujet de recherche : "{recherche}".
-        
-        INSTRUCTIONS : 
-        - Ne dis pas "Voici...".
-        - Explique brièvement si le rythme est cohérent ou s'il y a une anomalie.
-        - Recommande le meilleur moment pour poster sur ce sujet précis.
-        Ton direct, pro et factuel.
+        Pic d'activité : {peak_hour}h.
+        Sujet : "{recherche}".
+
+        - Analyse le rythme de publication
+        - Détecte une anomalie éventuelle
+        - Recommande le meilleur moment pour poster
+        Ton clair, professionnel et factuel.
         """
-        
-        with st.spinner("L'IA analyse le timing..."):
+
+        with st.spinner("Analyse technique en cours..."):
             api_key = os.getenv("GROQ_API_KEY")
             if Groq and api_key:
                 try:
@@ -618,35 +685,57 @@ with tab2:
                         messages=[{"role": "user", "content": prompt_trend}],
                         temperature=0.2
                     )
-                    st.markdown(f'<div class="ai-card" style="border-left: 5px solid #007AFF;"><strong>⏱️ Optimisation du Timing</strong><div class="ai-content" style="line-height: 1.3;">{res.choices[0].message.content}</div></div>', unsafe_allow_html=True)
-                except: st.info("Analyse temporelle indisponible.")
+                    st.markdown(
+                        f"""
+                        <div class="ai-card" style="border-left:5px solid #007AFF;">
+                            <strong>🛠️ Diagnostic IA</strong>
+                            <div class="ai-content">{res.choices[0].message.content}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                except:
+                    st.info("Diagnostic IA indisponible.")
 
-        # --- 4. TOP MOTS-CLÉS DYNAMIQUE ---
-        st.markdown('<div class="subsection-title">Sémantique par Sentiment</div>', unsafe_allow_html=True)
-        choix_sent = st.radio("Cibler les mots pour le sentiment :", ["positive", "neutral", "negative"], horizontal=True)
-        
-        stop_words = ["le", "la", "les", "un", "une", "des", "et", "en", "pour", "dans", "est", "sur", "que", "http", "https", "co", "rt", "tout", "avec", "est", "fait", "ses", "aux"]
-        df_mots = df_filtre[df_filtre["sentiment_display"] == choix_sent]
+        # =====================================================
+        # 4. UTILISATEURS LES PLUS ACTIFS (DERNIER GRAPHE)
+        # =====================================================
+        st.markdown(
+            '<div class="subsection-title">Utilisateurs les plus actifs</div>',
+            unsafe_allow_html=True
+        )
 
-        if not df_mots.empty:
-            tous_mots = " ".join(df_mots["clean_text"].astype(str)).lower().split()
-            mots_filtres = [m for m in tous_mots if m not in stop_words and len(m) > 3]
-            
-            if mots_filtres:
-                top_mots = pd.Series(mots_filtres).value_counts().head(12).reset_index()
-                top_mots.columns = ["mot", "count"]
-                
-                fig_mots = px.bar(
-                    top_mots, x="count", y="mot", orientation="h",
-                    color="count", color_continuous_scale=[[0, "#F0F0F0"], [1, SENTIMENT_COLOR_MAP[choix_sent]]],
-                    title=f"Mots les plus fréquents : {choix_sent.capitalize()}"
-                )
-                fig_mots.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, coloraxis_showscale=False, plot_bgcolor="white")
-                st.plotly_chart(fig_mots, use_container_width=True)
-            else:
-                st.info("Pas assez de mots significatifs détectés.")
+        if "user_name" in df_filtre.columns:
+            df_users = (
+                df_filtre["user_name"]
+                .dropna()
+                .value_counts()
+                .head(12)
+                .reset_index()
+            )
+            df_users.columns = ["Utilisateur", "Nombre de tweets"]
+
+            fig_users = px.bar(
+                df_users,
+                x="Nombre de tweets",
+                y="Utilisateur",
+                orientation="h",
+                color="Nombre de tweets",
+                color_continuous_scale="Blues",
+                title="Top 12 des utilisateurs les plus actifs"
+            )
+
+            fig_users.update_layout(
+                yaxis={"categoryorder": "total ascending"},
+                plot_bgcolor="white",
+                showlegend=False,
+                coloraxis_showscale=False
+            )
+
+            st.plotly_chart(fig_users, use_container_width=True)
         else:
-            st.info(f"Aucun tweet classé comme '{choix_sent}' dans cette sélection.")
+            st.warning("Colonne 'user_name' absente du dataset.")
+
 # --- TAB 3: Qualité du modèle ---
 with tab3:
     st.markdown('<div class="section-title">Analyse Performance & Comparatif Dynamique</div>', unsafe_allow_html=True)
@@ -654,12 +743,32 @@ with tab3:
     # --- 1. CHARGEMENT ET KPIs ---
     comp_path = os.path.join(project_root, "data", "models", "model_comparison.csv")
     df_comp = pd.DataFrame()
-    if os.path.exists(comp_path):
-        df_comp = pd.read_csv(comp_path).sort_values("f1_macro", ascending=False)
 
+    if os.path.exists(comp_path) and os.path.getsize(comp_path) > 0:
+        try:
+            df_comp = pd.read_csv(comp_path)
+
+            # Vérification des colonnes attendues
+            required_cols = {"model", "f1_macro"}
+            if required_cols.issubset(df_comp.columns):
+                df_comp = df_comp.sort_values("f1_macro", ascending=False)
+            else:
+                st.warning("⚠️ Fichier de comparaison invalide (colonnes manquantes).")
+                df_comp = pd.DataFrame()
+
+        except pd.errors.EmptyDataError:
+            st.warning("⚠️ Fichier model_comparison.csv vide.")
+            df_comp = pd.DataFrame()
+        except Exception as e:
+            st.warning(f"⚠️ Erreur lecture model_comparison.csv : {e}")
+            df_comp = pd.DataFrame()
+    else:
+        st.info("ℹ️ Aucune comparaison de modèles disponible.")
+
+    # --- KPIs IA ---
     conf_moy = float(df_filtre["confidence"].dropna().mean()) if df_filtre["confidence"].notna().any() else 0.0
     taux_neu = float((df_filtre["sentiment_display"] == "neutral").mean() * 100)
-    
+
     col_gauge, col_stats = st.columns([1, 1])
     with col_gauge:
         fig_gauge = go.Figure(go.Indicator(
@@ -678,9 +787,9 @@ with tab3:
             lr_perf = df_comp[df_comp['model'].str.contains('Logistic', case=False, na=False)]['f1_macro'].max()
             st.markdown(f'<div class="kpi-card"><div class="kpi-value">{lr_perf:.3f}</div><div class="kpi-label">F1-Score Logistic Reg.</div></div>', unsafe_allow_html=True)
 
-    # --- 2. INSIGHT GROQ : ANALYSE TECHNIQUE & PROSPECTIVE (MAX 7 LIGNES) ---
+    # --- 2. INSIGHT GROQ ---
     st.markdown('<div class="subsection-title">Diagnostic de l\'Expert IA</div>', unsafe_allow_html=True)
-    
+
     infos_comp = df_comp[["model", "f1_macro"]].to_string() if not df_comp.empty else "N/A"
     
     prompt_expert_dynamique = f"""
@@ -694,7 +803,7 @@ with tab3:
     - Pour le futur : suggère un entraînement sur un dataset plus massif ou une architecture plus profonde pour réduire l'indécision.
     Ton pro, factuel, sans phrases génériques.
     """
-    
+
     with st.spinner("Analyse des performances en cours..."):
         api_key = os.getenv("GROQ_API_KEY")
         if Groq and api_key:
@@ -708,7 +817,7 @@ with tab3:
                 st.markdown(f'<div class="ai-card"><strong>🔍 Synthèse de Fiabilité & Futur</strong><div class="ai-content" style="line-height: 1.3;">{completion.choices[0].message.content}</div></div>', unsafe_allow_html=True)
             except: st.info("Analyse indisponible.")
 
-    # --- 3. DISTRIBUTIONS TECHNIQUES (HISTO + BOXPLOT) ---
+    # --- 3. DISTRIBUTIONS TECHNIQUES ---
     st.markdown('<div class="subsection-title">Distribution de la confiance</div>', unsafe_allow_html=True)
     df_conf = df_filtre[["sentiment_display", "confidence"]].dropna()
     if not df_conf.empty:
@@ -722,10 +831,9 @@ with tab3:
             fig_box.update_layout(plot_bgcolor="white")
             st.plotly_chart(fig_box, use_container_width=True)
 
-    # --- 4. NOUVEAU GRAPHIQUE : FIABILITÉ PAR TRANCHE (Calibration) ---
+    # --- 4. FIABILITÉ PAR TRANCHE ---
     st.markdown('<div class="subsection-title">Fiabilité par tranche de certitude</div>', unsafe_allow_html=True)
     if not df_conf.empty:
-        # Création de tranches de confiance pour voir la répartition du volume
         df_conf['conf_range'] = pd.cut(df_conf['confidence'], bins=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
         conf_dist = df_conf.groupby('conf_range', observed=False).size().reset_index(name='count')
         conf_dist['conf_range'] = conf_dist['conf_range'].astype(str)
